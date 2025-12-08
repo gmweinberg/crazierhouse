@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Chess Lobby</title>
+<style>
+  body { font-family: sans-serif; margin: 40px; }
+  #container { max-width: 300px; }
+  label { display: inline-block; width: 80px; }
+  select, button { margin: 10px 0; font-size: 16px; }
+</style>
+</head>
+
+<body>
+<div id="container">
+  <h2>Start New Game</h2>
+
+  <div>
+    <label>Side:</label>
+    <select id="side">
+      <option value="white">White</option>
+      <option value="black">Black</option>
+    </select>
+  </div>
+
+  <div>
+    <label>Start:</label>
+    <select id="startpos">
+      <option value="standard">Standard</option>
+      <option value="random">960</option>
+    </select>
+  </div>
+
+  <div>
+    <label>Insanity:</label>
+    <select id="insanity">
+      <option value="0">0</option>
+      <option value="1" selected>1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+    </select>
+  </div>
+
+  <button onclick="launchGame()">Launch Game</button>
+</div>
+
+<script>
+function launchGame() {
+  const side = document.getElementById("side").value;
+  const startpos = document.getElementById("startpos").value;
+  const insanity = document.getElementById("insanity").value;
+
+  // Pass the game settings to game.html via URL query params
+  const url =
+    `game.html?side=${side}&startpos=${startpos}&insanity=${insanity}`;
+
+  window.location.href = url;
+}
+</script>
+
+</body>
+</html>

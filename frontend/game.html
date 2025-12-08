@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Game</title>
+
+<style>
+  body {
+    font-family: sans-serif;
+    margin: 20px;
+    display: flex;
+    gap: 40px;
+  }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 60px);
+    grid-template-rows: repeat(8, 60px);
+    border: 2px solid black;
+    user-select: none;
+  }
+  .square {
+    width: 60px;
+    height: 60px;
+    font-size: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+  }
+  .light { background-color: #f0d9b5; }
+  .dark  { background-color: #b58863; }
+  .selected {
+    outline: 3px solid yellow;
+  }
+  #promotionDialog {
+    position: absolute;
+    background: white;
+    border: 2px solid black;
+    padding: 10px;
+    display: none;
+  }
+  #promotionDialog button {
+    font-size: 30px;
+    margin: 5px;
+  }
+</style>
+</head>
+
+<body>
+
+<div id="board"></div>
+
+<div id="promotionDialog">
+  <span>Select promotion:</span><br>
+  <button onclick="finishPromotion('q')">♕</button>
+  <button onclick="finishPromotion('r')">♖</button>
+  <button onclick="finishPromotion('b')">♗</button>
+  <button onclick="finishPromotion('n')">♘</button>
+</div>
+
+<!-- JS loaded once, at bottom, AFTER DOM is built -->
+<script src="js/app.js"></script>
+
+</body>
+</html>
