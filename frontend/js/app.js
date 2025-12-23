@@ -13,6 +13,8 @@ let ws = null;
 let selectedFrom = null;
 let pendingPromotion = null;
 let boardState = [];   // 8x8 array
+let selectedPocketPiece = null;
+let gameOver = false;
 
 //-------------------------------------------------------------
 // Build the chessboard DOM once, after page loads
@@ -39,6 +41,14 @@ window.addEventListener("load", () => {
   openConnection();
 });
 
+document.addEventListener("click", e => {
+  const pocketEl = e.target.closest(".pocket-piece");
+  if (!pocketEl) return;
+
+  selectedPocketPiece = pocketEl.dataset.piece.toUpperCase();
+});
+
+
 //-------------------------------------------------------------
 // Open WebSocket exactly once
 //-------------------------------------------------------------
@@ -58,7 +68,27 @@ function openConnection() {
     const msg = JSON.parse(evt.data);
     if (msg.type === "state") {
       drawBoard(msg.board);
+      const { white, black } = msg.pockets;
+	  //console.log("white" + white);
+	  if (gameSide === "white") {
+          renderPocket("human-pocket", white);
+          renderPocket("comp-pocket", black);
+	  } else {
+          renderPocket("human-pocket", black);
+          renderPocket("comp-pocket", white);
+	  }
+
     }
+	if (msg.type === "terminal") {
+	  let text;
+	  if (msg.result === "white_win") text = "White wins!";
+	  else if (msg.result === "black_win") text = "Black wins!";
+	  else text = "Draw.";
+
+	  document.getElementById("status").textContent = text;
+	  gameOver = true;
+	  console.log("gameOverMan");
+	}
   };
 }
 
@@ -83,11 +113,25 @@ function drawBoard(board) {
 //-------------------------------------------------------------
 function onSquareClick(evt) {
   if (!ws) return;
+  if (gameOver) return;
+
 
   const row = parseInt(evt.currentTarget.dataset.row);
   const col = parseInt(evt.currentTarget.dataset.col);
   const clickedPiece = boardState[row][col];
-  console.log("first click");
+  if (selectedPocketPiece) {
+	  const square =
+		"abcdefgh"[col] + (8 - row);
+
+	  ws.send(JSON.stringify({
+		cmd: "move",
+		uci: selectedPocketPiece + "@" + square
+	  }));
+
+	  selectedPocketPiece = null;
+	  clearSelection();
+	  return;
+  }
 
   // FIRST CLICK — select a piece
   if (!selectedFrom) {
@@ -98,7 +142,6 @@ function onSquareClick(evt) {
     }
     return;
   }
-  console.log("second click");
 
   // SECOND CLICK — attempt move
   const fromPiece = boardState[selectedFrom.row][selectedFrom.col];
@@ -132,6 +175,17 @@ function attemptMove(move) {
 
   sendMoveUCI(move, null);
 }
+
+function onBoardSquareClick(square) {
+  if (selectedPocketPiece) {
+    const uci = selectedPocketPiece + "@" + square;
+    ws.send(JSON.stringify({ cmd: "move", uci }));
+    selectedPocketPiece = null;
+  } else {
+    // existing move logic
+  }
+}
+
 
 //-------------------------------------------------------------
 // Promotion popup
@@ -203,13 +257,53 @@ function isRook(piece) {
   return piece === "♖" || piece === "♜";
 }
 
+function parseFenPockets(fen) {
+  const match = fen.match(/\[([^\]]+)\]/);
+  if (!match) return { white: {}, black: {} };
+
+  const pocketStr = match[1];
+  const white = {};
+  const black = {};
+
+  for (const ch of pocketStr) {
+    if (ch === ch.toUpperCase()) {
+      white[ch] = (white[ch] || 0) + 1;
+    } else {
+      black[ch] = (black[ch] || 0) + 1;
+    }
+  }
+  return { white, black };
+}
+
+const PIECE_TO_UNICODE = {
+  P: "♙", N: "♘", B: "♗", R: "♖", Q: "♕",
+  p: "♟", n: "♞", b: "♝", r: "♜", q: "♛",
+};
+
+function renderPocket(elemId, pocket) {
+  const div = document.getElementById(elemId);
+  div.innerHTML = "";
+
+  for (const [piece, count] of Object.entries(pocket)) {
+    const span = document.createElement("span");
+    span.className = "pocket-piece";
+    span.dataset.piece = piece;
+
+    span.innerHTML = `
+      <span class="pocket-icon">${PIECE_TO_UNICODE[piece]}</span>
+      <span class="pocket-count">${count}</span>
+    `;
+
+    div.appendChild(span);
+  }
+}
+
 function highlightSquare(r, c) {
   const idx = r * 8 + c;
   boardDiv.children[idx].classList.add("selected");
 }
 
 function clearSelection() {
-  console.log("clearing selection");
   selectedFrom = null;
   Array.from(boardDiv.children).forEach(sq =>
     sq.classList.remove("selected")
