@@ -143,12 +143,17 @@ function onSquareClick(evt) {
     return;
   }
 
+  if (selectedFrom.row == row && selectedFrom.col == col) {
+	  clearSelection();
+	  return;
+  }
+
   // SECOND CLICK — attempt move
   const fromPiece = boardState[selectedFrom.row][selectedFrom.col];
   const toPiece   = clickedPiece;
 
   // Castling attempt: king → rook
-  if (isKing(fromPiece) && isRook(toPiece)) {
+  if (gameStartpos == "standard" && isKing(fromPiece) && isRook(toPiece)) {
     performCastling(selectedFrom, { row, col });
     return;
   }
