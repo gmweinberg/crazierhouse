@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import math
 import random
+import os
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -98,6 +99,7 @@ class Transition:
     mask: np.ndarray          # (A,)
     action: int
     player: int               # player who took the action
+    pi: np.ndarray   # (A,) target policy from MCTS visit counts
 
 
 def play_selfplay_game(game: pyspiel.Game, net: PVNet, device: torch.device,
@@ -138,7 +140,6 @@ def play_selfplay_game(game: pyspiel.Game, net: PVNet, device: torch.device,
 
         transitions.append(Transition(obs=o, mask=m, action=a, player=p))
         state.apply_action(a)
-
     return transitions, state.returns()
 
 
@@ -168,15 +169,25 @@ def train_step(net: PVNet, optimizer: torch.optim.Optimizer, batch: List[Transit
     # Terminal return for each transition, from the perspective of the acting player
     # returns is a Python list like [r0, r1]
     r = torch.tensor(returns, device=device, dtype=torch.float32)  # (P,)
-    z = r[ply_b]  # (T,)
+    # z = r[ply_b]  # (T,)
+    z = r[0].expand_as(v)
 
     # Advantage with value baseline
     adv = (z - v).detach()
 
     # Policy gradient loss: maximize E[logpi * adv] => minimize -logpi * adv
     policy_loss = -(chosen_logp * adv).mean()
+    # temprorarily disable policy loss
+    # policy_loss = 0
 
     # Value loss: regress to z
+    with torch.no_grad():
+        # bootstrap target: v(s_t) ≈ γ * v(s_{t+1})
+        gamma = 0.99
+
+        z = torch.empty_like(v)
+        z[:-1] = gamma * v[1:]
+        z[-1] = r[0]  # terminal value
     value_loss = F.mse_loss(v, z)
 
     # Entropy bonus (encourage exploration)
@@ -185,6 +196,11 @@ def train_step(net: PVNet, optimizer: torch.optim.Optimizer, batch: List[Transit
 
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
+    total_norm = 0.0
+    for p in net.parameters():
+        if p.grad is not None:
+            total_norm += p.grad.data.norm(2).item()
+    print("grad norm:", total_norm)
     torch.nn.utils.clip_grad_norm_(net.parameters(), 5.0)
     optimizer.step()
 
@@ -201,8 +217,10 @@ def get_model():
     in_channels = shape[0]
 
     model = PVNet(in_channels=in_channels, num_actions=num_actions, channels=64).to(device)
+    ckpt_path = "crazyhouse_pvnet.pt"
+    ckpt = torch.load(ckpt_path, map_location=device)
 
-    model.load_state_dict(torch.load("crazyhouse_pvnet.pt", map_location=device))
+    model.load_state_dict(ckpt['model'])
     model.eval()
 
     return model
@@ -226,13 +244,26 @@ def main():
     net = PVNet(in_channels=in_channels, num_actions=num_actions, channels=64).to(device)
     optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
 
+    g = 0
+    ckpt_path = "crazyhouse_pvnet.pt"
+    if os.path.exists(ckpt_path):
+        ckpt = torch.load(ckpt_path, map_location=device)
+        net.load_state_dict(ckpt["model"])
+        optimizer.load_state_dict(ckpt["optimizer"])
+        g = ckpt["game"]
+        print("Loaded checkpoint:", ckpt_path)
+    else:
+        print("Starting from scratch")
+
     # Training params
-    num_games = 200          # start small
+    num_games = 1000          # start small
     temperature = 1.0        # >1 more random, <1 more greedy
     value_coef = 1.0
     entropy_coef = 0.01
 
-    for g in range(num_games):
+    while True:
+        g += 1
+    #for g in range(num_games):
         traj, rets = play_selfplay_game(game, net, device, temperature=temperature)
 
         pl, vl, ent = train_step(
@@ -240,12 +271,22 @@ def main():
             value_coef=value_coef, entropy_coef=entropy_coef
         )
 
-        if (g + 1) % 10 == 0:
+        if g % 10 == 0:
             print(f"Game {g+1:4d} | returns={rets} | policy_loss={pl:.4f} | value_loss={vl:.4f} | entropy={ent:.4f}")
+        if  g  % 1000 == 0:
+            torch.save({
+               "model": net.state_dict(),
+               "optimizer": optimizer.state_dict(),
+               "game": g,
+            }, f"crazyhouse_pvnet_{g}.pt")
+            torch.save({
+               "model": net.state_dict(),
+               "optimizer": optimizer.state_dict(),
+               "game": g,
+            }, "crazyhouse_pvnet_latest.pt")
+            print("Saved model")
 
     # Save model
-    torch.save(net.state_dict(), "crazyhouse_pvnet.pt")
-    print("Saved model to crazyhouse_pvnet.pt")
 
 
 if __name__ == "__main__":
