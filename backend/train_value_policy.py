@@ -12,6 +12,21 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class MCTSNode:
+    __slots__ = ("prior", "visit_count", "value_sum")
+
+    def __init__(self, prior: float):
+        self.prior = prior
+        self.visit_count = 0
+        self.value_sum = 0.0
+
+    @property
+    def value(self):
+        if self.visit_count == 0:
+            return 0.0
+        return self.value_sum / self.visit_count
+
 # ----------------------------
 # Model
 # ----------------------------
@@ -92,6 +107,126 @@ def masked_softmax(logits: torch.Tensor, mask: torch.Tensor, dim: int = -1) -> t
     masked_logits = torch.where(mask > 0, logits, neg_inf)
     return F.softmax(masked_logits, dim=dim)
 
+def run_mcts(state: pyspiel.State,
+             net: PVNet,
+             num_simulations: int = 100,
+             c_puct: float = 1.5,
+             temperature: float = 1.0):
+    """
+    Returns:
+      pi: np.ndarray of shape (num_actions,)
+      a: selected action (int)
+    """
+    num_actions = state.get_game().num_distinct_actions()
+    root = {}
+    legal = state.legal_actions()
+
+    # --- Expand root ---
+    obs = obs_tensor(state)
+    x = torch.from_numpy(obs).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        logits, value = net(x)
+        value = value.item()
+        mask = torch.zeros((1, num_actions), device=device)
+        mask[0, legal] = 1
+        priors = masked_softmax(logits, mask)[0].cpu().numpy()
+    # After priors = masked_softmax(...).cpu().numpy()
+    # and after `legal = state.legal_actions()`
+
+    epsilon = 0.25          # how much noise to mix in
+    alpha = 0.3             # Dirichlet concentration (works fine as a starting point)
+
+    noise = np.random.dirichlet([alpha] * len(legal)).astype(np.float32)
+
+    # mix noise into priors ONLY on legal moves
+    for i, a in enumerate(legal):
+       priors[a] = (1 - epsilon) * priors[a] + epsilon * noise[i]
+
+    for a in legal:
+        root[a] = MCTSNode(prior=priors[a])
+
+    # --- MCTS simulations ---
+    for _ in range(num_simulations):
+        sim_state = state.clone()
+        path = []
+        node = root
+        #player = sim_state.current_player()
+        player = 1 - sim_state.current_player()
+
+        # Selection
+        while True:
+            total_visits = sum(n.visit_count for n in node.values())
+            best_score = -1e9
+            best_action = None
+
+            for a, n in node.items():
+                u = (
+                    n.value
+                    + c_puct * n.prior * math.sqrt(total_visits + 1) / (1 + n.visit_count)
+                )
+                if u > best_score:
+                    best_score = u
+                    best_action = a
+
+            path.append((node, best_action))
+            sim_state.apply_action(best_action)
+
+            if sim_state.is_terminal():
+                returns = sim_state.returns()
+                leaf_value = returns[player]
+                # penalize draws
+                if returns[0] == 0.0 and returns[1] == 0.0:
+                    leaf_value = -0.05
+                break
+
+            if sim_state.is_chance_node():
+                outcomes = sim_state.chance_outcomes()
+                acts, probs = zip(*outcomes)
+                sim_state.apply_action(random.choices(acts, probs)[0])
+                continue
+
+            # Expand
+            legal = sim_state.legal_actions()
+            obs = obs_tensor(sim_state)
+            x = torch.from_numpy(obs).unsqueeze(0).to(device)
+
+            with torch.no_grad():
+                logits, v = net(x)
+                leaf_value = v.item()
+                mask = torch.zeros((1, num_actions), device=device)
+                mask[0, legal] = 1
+                priors = masked_softmax(logits, mask)[0].cpu().numpy()
+
+            new_node = {}
+            for a in legal:
+                new_node[a] = MCTSNode(prior=priors[a])
+
+            node = new_node
+            break
+
+        # Backprop
+        for node, a in reversed(path):
+            n = node[a]
+            n.visit_count += 1
+            n.value_sum += leaf_value
+            leaf_value = -leaf_value  # switch perspective
+
+    # --- Build policy from visit counts ---
+    pi = np.zeros(num_actions, dtype=np.float32)
+    visits = np.array([root[a].visit_count if a in root else 0 for a in range(num_actions)])
+
+    if temperature == 0:
+        a = visits.argmax()
+        pi[a] = 1.0
+    else:
+        visits = visits ** (1 / temperature)
+        pi = visits / visits.sum()
+        a = np.random.choice(num_actions, p=pi)
+
+    return pi, int(a)
+
+
 
 @dataclass
 class Transition:
@@ -126,19 +261,13 @@ def play_selfplay_game(game: pyspiel.Game, net: PVNet, device: torch.device,
         o = obs_tensor(state)
         m = legal_mask(state, num_actions)
 
+
         # NN forward
         x = torch.from_numpy(o).unsqueeze(0).to(device)   # (1,C,H,W)
         mm = torch.from_numpy(m).unsqueeze(0).to(device)  # (1,A)
-        with torch.no_grad():
-            logits, _v = net(x)
-            if temperature != 1.0:
-                logits = logits / temperature
-            probs = masked_softmax(logits, mm)[0]  # (A,)
+        pi, a = run_mcts(state, net)
 
-        # Sample an action (stochastic policy)
-        a = torch.multinomial(probs, num_samples=1).item()
-
-        transitions.append(Transition(obs=o, mask=m, action=a, player=p))
+        transitions.append(Transition(obs=o, mask=m, action=a, player=p, pi=pi))
         state.apply_action(a)
     return transitions, state.returns()
 
@@ -166,28 +295,30 @@ def train_step(net: PVNet, optimizer: torch.optim.Optimizer, batch: List[Transit
     logp = torch.log(torch.clamp(probs, min=1e-12))  # (T,A)
     chosen_logp = logp.gather(1, act_b.view(-1, 1)).squeeze(1)  # (T,)
 
+    ent = -(probs * logp).sum(dim=1)
+
+
     # Terminal return for each transition, from the perspective of the acting player
     # returns is a Python list like [r0, r1]
     r = torch.tensor(returns, device=device, dtype=torch.float32)  # (P,)
-    # z = r[ply_b]  # (T,)
-    z = r[0].expand_as(v)
 
-    # Advantage with value baseline
-    adv = (z - v).detach()
+    # sanity checks
+    assert torch.isfinite(logits).all()
+    assert torch.isfinite(v).all()
+    assert torch.isfinite(mask_b).all()
 
-    # Policy gradient loss: maximize E[logpi * adv] => minimize -logpi * adv
-    policy_loss = -(chosen_logp * adv).mean()
-    # temprorarily disable policy loss
-    # policy_loss = 0
+    # print("v stats:", v.detach().min().item(), v.detach().mean().item(), v.detach().max().item())
+    # print("v first 10:", v.detach()[:10].cpu().numpy())
+    pi_b = torch.from_numpy(np.stack([t.pi for t in batch])).to(device)
+    policy_loss = -(pi_b * logp).sum(dim=1).mean()
+    z = r[ply_b]
+    draw_penalty = 0.05
+    z = torch.where(
+        r[ply_b] == 0.0,
+        torch.tensor(-draw_penalty, device=device),
+        r[ply_b]
+    )
 
-    # Value loss: regress to z
-    with torch.no_grad():
-        # bootstrap target: v(s_t) ≈ γ * v(s_{t+1})
-        gamma = 0.99
-
-        z = torch.empty_like(v)
-        z[:-1] = gamma * v[1:]
-        z[-1] = r[0]  # terminal value
     value_loss = F.mse_loss(v, z)
 
     # Entropy bonus (encourage exploration)
@@ -236,6 +367,7 @@ def main():
     game = pyspiel.load_game("crazyhouse")
     shape = game.observation_tensor_shape()
     num_actions = game.num_distinct_actions()
+    save_every = 100
     print("Obs shape:", shape, "Num actions:", num_actions)
 
     # sanity: expected shape [38,8,8]
@@ -256,14 +388,12 @@ def main():
         print("Starting from scratch")
 
     # Training params
-    num_games = 1000          # start small
     temperature = 1.0        # >1 more random, <1 more greedy
-    value_coef = 1.0
+    value_coef = 10.0
     entropy_coef = 0.01
 
     while True:
         g += 1
-    #for g in range(num_games):
         traj, rets = play_selfplay_game(game, net, device, temperature=temperature)
 
         pl, vl, ent = train_step(
@@ -272,8 +402,8 @@ def main():
         )
 
         if g % 10 == 0:
-            print(f"Game {g+1:4d} | returns={rets} | policy_loss={pl:.4f} | value_loss={vl:.4f} | entropy={ent:.4f}")
-        if  g  % 1000 == 0:
+            print(f"Game {g+1:4d} | returns={rets} | policy_loss={pl:.6f} | value_loss={vl:.6f} | entropy={ent:.6f}")
+        if  g  % save_every == 0:
             torch.save({
                "model": net.state_dict(),
                "optimizer": optimizer.state_dict(),
