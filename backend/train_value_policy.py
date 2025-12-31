@@ -86,6 +86,7 @@ def obs_tensor(state: pyspiel.State) -> np.ndarray:
     # We'll reshape to (C,H,W) for CNN.
     obs = np.array(state.observation_tensor(), dtype=np.float32)
     # For crazyhouse you saw shape [38,8,8]
+
     return obs.reshape((38, 8, 8))
 
 
@@ -168,16 +169,13 @@ def run_mcts(state: pyspiel.State,
                 if u > best_score:
                     best_score = u
                     best_action = a
-
-            path.append((node, best_action))
+            cur_player = sim_state.current_player()
+            path.append((node, best_action, cur_player))
             sim_state.apply_action(best_action)
 
             if sim_state.is_terminal():
                 returns = sim_state.returns()
-                leaf_value = returns[player]
-                # penalize draws
-                if returns[0] == 0.0 and returns[1] == 0.0:
-                    leaf_value = -0.05
+                leaf_value = returns[0]
                 break
 
             if sim_state.is_chance_node():
@@ -206,11 +204,13 @@ def run_mcts(state: pyspiel.State,
             break
 
         # Backprop
-        for node, a in reversed(path):
+        for node, a, cur_player in reversed(path):
             n = node[a]
             n.visit_count += 1
-            n.value_sum += leaf_value
-            leaf_value = -leaf_value  # switch perspective
+            if cur_player == 0:
+               n.value_sum += leaf_value      # player 0 wants to maximize
+            else:
+               n.value_sum -= leaf_value      # player 1 wants to minimize
 
     # --- Build policy from visit counts ---
     pi = np.zeros(num_actions, dtype=np.float32)
@@ -226,7 +226,57 @@ def run_mcts(state: pyspiel.State,
 
     return pi, int(a)
 
+@dataclass
+class BatchStats:
+    games: int = 0
+    white_wins: int = 0
+    black_wins: int = 0
+    draws: int = 0
+    total_game_length: int = 0
 
+    def reset(self):
+        self.games = 0
+        self.white_wins = 0
+        self.black_wins = 0
+        self.draws = 0
+        self.total_game_length = 0
+
+    def record_game(self, result, game_length):
+        """
+        result: +1 = white win
+                -1 = black win
+                 0 = draw
+        """
+        self.games += 1
+        self.total_game_length += game_length
+
+        if result > 0:
+            self.white_wins += 1
+        elif result < 0:
+            self.black_wins += 1
+        else:
+            self.draws += 1
+
+    def report(self):
+        if self.games == 0:
+            return "No games played"
+
+        avg_len = self.total_game_length / self.games
+
+        w = 100 * self.white_wins / self.games
+        b = 100 * self.black_wins / self.games
+        d = 100 * self.draws / self.games
+
+        return (
+            "Batch Stats: "
+            f"Games: {self.games} | "
+            f"Avg length: {avg_len:.1f} | "
+            f"White: {w:.1f}% | "
+            f"Black: {b:.1f}% | "
+            f"Draws: {d:.1f}%"
+        )
+
+batch_stats = BatchStats()
 
 @dataclass
 class Transition:
@@ -269,6 +319,15 @@ def play_selfplay_game(game: pyspiel.Game, net: PVNet, device: torch.device,
 
         transitions.append(Transition(obs=o, mask=m, action=a, player=p, pi=pi))
         state.apply_action(a)
+    returns = state.returns()
+    if returns[1] > 0:
+       result = +1    # white win
+    elif returns[1] < 0:
+        result = -1    # black win
+    else:
+        result = 0     # draw
+    game_length = state.move_number()
+    batch_stats.record_game(result, game_length)
     return transitions, state.returns()
 
 
@@ -278,7 +337,7 @@ def train_step(net: PVNet, optimizer: torch.optim.Optimizer, batch: List[Transit
     """
     One policy-gradient update from a single game (or concatenated games).
     Uses terminal return as Monte Carlo target.
-    Advantage = (z - v(s)), where z is return for the acting player.
+    Advantage = (z - v(s)), where z is return for player 0 black
     """
     num_actions = len(batch[0].mask)
 
@@ -311,15 +370,11 @@ def train_step(net: PVNet, optimizer: torch.optim.Optimizer, batch: List[Transit
     # print("v first 10:", v.detach()[:10].cpu().numpy())
     pi_b = torch.from_numpy(np.stack([t.pi for t in batch])).to(device)
     policy_loss = -(pi_b * logp).sum(dim=1).mean()
-    z = r[ply_b]
-    draw_penalty = 0.05
-    z = torch.where(
-        r[ply_b] == 0.0,
-        torch.tensor(-draw_penalty, device=device),
-        r[ply_b]
-    )
+    #z = r[ply_b]
+    z = torch.full_like(v, r[0])
 
     value_loss = F.mse_loss(v, z)
+    #print("v min/max:", v.min().item(), v.max().item(), "target z:", z.unique().tolist())
 
     # Entropy bonus (encourage exploration)
     entropy = -(probs * logp).sum(dim=1).mean()  # mean over time
@@ -331,7 +386,7 @@ def train_step(net: PVNet, optimizer: torch.optim.Optimizer, batch: List[Transit
     for p in net.parameters():
         if p.grad is not None:
             total_norm += p.grad.data.norm(2).item()
-    print("grad norm:", total_norm)
+    #print("grad norm:", total_norm)
     torch.nn.utils.clip_grad_norm_(net.parameters(), 5.0)
     optimizer.step()
 
@@ -408,12 +463,15 @@ def main():
                "model": net.state_dict(),
                "optimizer": optimizer.state_dict(),
                "game": g,
-            }, f"crazyhouse_pvnet_{g}.pt")
+            }, f"crazyhouse_pvnet_run_{g}.pt")
             torch.save({
                "model": net.state_dict(),
                "optimizer": optimizer.state_dict(),
                "game": g,
             }, "crazyhouse_pvnet_latest.pt")
+            print(batch_stats.report())
+
+            batch_stats.reset()
             print("Saved model")
 
     # Save model

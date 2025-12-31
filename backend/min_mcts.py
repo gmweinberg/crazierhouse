@@ -11,9 +11,9 @@ game = pyspiel.load_game("crazyhouse")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = get_model()
 
-def get_mcts_bot():
+def get_mcts_stuff():
     evaluator = ValueNetEvaluator(game, model, device)
-    return mcts.MCTSBot(
+    mcts_bot =  mcts.MCTSBot(
         game=game,
         uct_c=1.4,
         max_simulations=400,
@@ -21,3 +21,4 @@ def get_mcts_bot():
         solve=False,
         random_state=np.random.RandomState(0),
     )
+    return {'model':model, 'evaluator':evaluator, 'mcts_bot':mcts_bot}

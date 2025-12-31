@@ -2,23 +2,108 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import random
 import pyspiel
 
+import torch
+from train_value_policy import PVNet  # or wherever you defined it
+import numpy as np
+import torch.nn.functional as F
+from min_mcts import get_mcts_stuff
+
 app = FastAPI()
 
+mcts_stuff = get_mcts_stuff()
+mcts_bot = mcts_stuff['mcts_bot']
+evaluator = mcts_stuff['evaluator']
+model = mcts_stuff['model']
+
+
+def apply_ai_move(state):
+   ai_action = select_ai_move(state)
+   if ai_action is not None:
+       ai_uci = state.action_to_string(ai_action)
+       state.apply_action(ai_action)
+       return ai_uci
+
+def apply_random_move(state):
+    ai_action = select_ai_move(state)
+    if ai_action is not None:
+        ai_uci = state.action_to_string(ai_action)
+        state.apply_action(ai_action)
+        return ai_uci
+
+def apply_mcts_move(state, mcts_bot):
+    ai_action = mcts_bot.step(state)
+    if ai_action is None:
+        return
+    if ai_action not in state.legal_actions():
+        print("ILLEGAL ACTION:", ai_action)
+        print("LEGAL:", state.legal_actions())
+        raise RuntimeError("Illegal MCTS action")
+    ai_uci = state.action_to_string(ai_action)
+    state.apply_action(ai_action)
+    v = evaluator.evaluate(state)
+    print(state.current_player(), v)
+    cp = state.current_player()
+    print("value_for_side_to_move:", v[cp], "raw:", v)
+    # diagnostic
+    obs = np.asarray(state.observation_tensor(), dtype=np.float32)
+
+    print("OBS min/max/sum:",
+          obs.min(),
+          obs.max(),
+          obs.sum())
+
+    # obs2 = obs.reshape(self.obs_shape)
+    #x = torch.from_numpy(obs2).unsqueeze(0).to(self.device)
+
+    #with torch.no_grad():
+    #    policy, value = model(x)
+
+    #print("RAW value:", value.item())
+    return ai_uci
+
+
+
+def terminal_payload(state):
+    returns = state.returns()
+    print(returns)
+    if returns[0] > returns[1]:
+        result = "black_win"
+    elif returns[1] > returns[0]:
+        result = "white_win"
+    else:
+        result = "draw"
+
+    return {
+        "type": "terminal",
+        "result": result,
+        "returns": returns,
+    }
+
+
 # ----------------------------------------------------
-# Unicode mapping for FEN chars
+# Unicode mapping for FEN chars. 
+# We draw the promoted pieces looking like the regular ones
 # ----------------------------------------------------
 FEN_TO_UNICODE = {
     "P": "♙",
     "N": "♘",
+    "H":  "♘",
     "B": "♗",
+    "A": "♗",
     "R": "♖",
+    "C": "♖",
     "Q": "♕",
+    "E": "♕",
     "K": "♔",
     "p": "♟",
     "n": "♞",
+    "h": "♞",
     "b": "♝",
+    "a": "♝",
     "r": "♜",
+    "c": "♜",
     "q": "♛",
+    "e": "♛",
     "k": "♚",
 }
 
@@ -40,6 +125,22 @@ def fen_to_board(fen: str):
         board.append(cells[:8] + [""] * (8 - len(cells)))
 
     return board
+
+def parse_fen_pockets(fen: str):
+    pockets = {"white": {}, "black": {}}
+
+    if "[" not in fen:
+        return pockets
+
+    pocket_str = fen[fen.index("[")+1 : fen.index("]")]
+
+    for ch in pocket_str:
+        if ch.isupper():
+            pockets["white"][ch] = pockets["white"].get(ch, 0) + 1
+        else:
+            pockets["black"][ch] = pockets["black"].get(ch, 0) + 1
+
+    return pockets
 
 
 def apply_chess960_nature(state):
@@ -77,33 +178,34 @@ async def ws_endpoint(ws: WebSocket):
 
                 # Standard chess
                 if startpos == "standard":
-                    game = pyspiel.load_game("chess")
+                    game = pyspiel.load_game("crazyhouse")
                     state = game.new_initial_state()
 
                 # Chess960
                 elif startpos == "random":
-                    game = pyspiel.load_game("chess(chess960=true)")
+                    game = pyspiel.load_game("crazyhouse(chess960=true)")
                     state = game.new_initial_state()
                     apply_chess960_nature(state)
 
                 else:
-                    game = pyspiel.load_game("chess")
+                    game = pyspiel.load_game("crazyhouse")
                     state = game.new_initial_state()
+                print("state", state)
 
                 # If human plays black, AI moves first
                 if side == "black" and not state.is_terminal():
-                    legal = state.legal_actions()
-                    if legal:
-                        ai_action = random.choice(legal)
-                        state.apply_action(ai_action)
+                    last_move_uci = apply_mcts_move(state, mcts_bot)
+                    #ai_uci = apply_ai_move(state)
 
                 # Send initial board
                 fen = str(state)
                 board = fen_to_board(fen)
+                pockets = parse_fen_pockets(fen)
 
                 await ws.send_json({
                     "type": "state",
                     "board": board,
+                    "pockets":pockets,
                     "last_move": None
                 })
 
@@ -121,6 +223,7 @@ async def ws_endpoint(ws: WebSocket):
                 else:
                     # Parse human move
                     try:
+                        print("uci", uci)
                         action = state.parse_move_to_action(uci)
                     except Exception as e:
                         print("parse_move_to_action failed for", uci, e)
@@ -135,24 +238,28 @@ async def ws_endpoint(ws: WebSocket):
 
                         # AI reply
                         if not state.is_terminal():
-                            legal = state.legal_actions()
-                            if legal:
-                                ai_action = random.choice(legal)
-                                ai_uci = state.action_to_string(ai_action)
-                                state.apply_action(ai_action)
-                                last_move_uci = ai_uci
+                            #ai_action = select_ai_move(state)
+                            last_move_uci = apply_mcts_move(state, mcts_bot)
+                            # last_move_uci = apply_ai_move(state)
                     else:
                         print("Illegal move:", uci)
 
                 # Send updated board
                 fen = str(state)
+                print("fen", fen)
                 board = fen_to_board(fen)
+                pockets = parse_fen_pockets(fen)
 
                 await ws.send_json({
                     "type": "state",
                     "board": board,
+                    "pockets": pockets,
                     "last_move": last_move_uci
                 })
+                if state.is_terminal():
+                    print("this is the end")
+                    await ws.send_json(terminal_payload(state))
 
     except WebSocketDisconnect:
         return
+
