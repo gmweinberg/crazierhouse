@@ -2,7 +2,10 @@
 // Parse URL query parameters from lobby.html → game.html
 //-------------------------------------------------------------
 const urlParams = new URLSearchParams(window.location.search);
-const gameSide     = urlParams.get("side")     || "white";
+const whitePlayer = urlParams.get("whitePlayer") || "human";
+const blackPlayer = urlParams.get("blackPlayer") || "bot";
+//const gameSide     = urlParams.get("side")     || "white";
+const gameSide = 'white';
 const gameStartpos = urlParams.get("startpos") || "standard";
 const gameInsanity = urlParams.get("insanity") || "1";
 
@@ -15,6 +18,15 @@ let pendingPromotion = null;
 let boardState = [];   // 8x8 array
 let selectedPocketPiece = null;
 let gameOver = false;
+/* Board is currently always shown with white n bottom
+ * the gameside code was only affecting the pockets
+let gameSide;
+if ((blackPlayer == 'human') && (whitePlayer != 'human')) {
+	gameSide = 'black';
+} else {
+	gameSide = 'white';
+}
+*/
 
 //-------------------------------------------------------------
 // Build the chessboard DOM once, after page loads
@@ -58,7 +70,9 @@ function openConnection() {
   ws.onopen = () => {
     ws.send(JSON.stringify({
       cmd: "newgame",
-      side: gameSide,
+      //side: gameSide,
+      whitePlayer: whitePlayer,
+      blackPlayer: blackPlayer,
       startpos: gameStartpos,
       insanity: gameInsanity
     }));
@@ -314,3 +328,4 @@ function clearSelection() {
     sq.classList.remove("selected")
   );
 }
+

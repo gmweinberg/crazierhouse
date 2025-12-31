@@ -1,4 +1,6 @@
+crap
 *.swp
+*.pt
 
 __pycache__/
 *.pyc
