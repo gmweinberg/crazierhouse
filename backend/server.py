@@ -1,5 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import asyncio
+import math
 import random
 import time
 import pyspiel
@@ -27,6 +28,7 @@ def apply_random_move(state):
         return uci
 
 def apply_mcts_move(state, mcts_bot):
+    #print("MCTS MOVE for player:", state.current_player())
     ai_action = mcts_bot.step(state)
     if ai_action is None:
         return
@@ -35,19 +37,12 @@ def apply_mcts_move(state, mcts_bot):
         print("LEGAL:", state.legal_actions())
         raise RuntimeError("Illegal MCTS action")
     ai_uci = state.action_to_string(ai_action)
-    state.apply_action(ai_action)
     v = evaluator.evaluate(state)
     print(state.current_player(), v)
     cp = state.current_player()
     print("value_for_side_to_move:", v[cp], "raw:", v)
+    state.apply_action(ai_action)
     # diagnostic
-    obs = np.asarray(state.observation_tensor(), dtype=np.float32)
-
-    print("OBS min/max/sum:",
-          obs.min(),
-          obs.max(),
-          obs.sum())
-
     # obs2 = obs.reshape(self.obs_shape)
     #x = torch.from_numpy(obs2).unsqueeze(0).to(self.device)
 
@@ -56,6 +51,10 @@ def apply_mcts_move(state, mcts_bot):
 
     #print("RAW value:", value.item())
     return ai_uci
+
+def print_eval(state):
+    v = evaluator.evaluate(state)
+    print(v)
 
 
 
@@ -147,12 +146,14 @@ def apply_chess960_nature(state):
         action = random.choices(actions, probs)[0]
         state.apply_action(action)
 
-def otherPlayer(color: str):
-    if color == 'white':
-        return 'black'
-    if color == 'black':
-        return 'white'
-    raise Exception("unsupported color " + color)
+def whiteOnMove(state):
+    if state.current_player() == 1:
+        return True
+    return False
+
+def blackOnMove(state):
+    return not whiteOnMove(state)
+
 
 # ----------------------------------------------------
 # WebSocket endpointstate
@@ -207,7 +208,6 @@ async def ws_endpoint(ws: WebSocket):
                         last_move_uci = apply_mcts_move(state, mcts_bot)
                     elif whitePlayer == 'random' and not state.is_terminal():
                         last_move_uci = apply_random_move(state)
-                    onMove = otherPlayer(onMove)
 
                 # Send initial board
                 await send_state(ws, state, None)
@@ -220,7 +220,7 @@ async def ws_endpoint(ws: WebSocket):
             #                PLAYER MOVE
             # ----------------------------------------
             if cmd == "move" and game is not None and state is not None:
-                if (onMove == 'white' and whitePlayer == 'human') or (onMove == 'black' and blackPlayer == 'human'):
+                if (white_on_move(state) and whitePlayer == 'human') or (blackOnMove(state) and blackPlayer == 'human'):
                     uci = data.get("uci", None)
                     last_move_uci = None
 
@@ -240,8 +240,8 @@ async def ws_endpoint(ws: WebSocket):
                         # Apply human move
                         if action is not None and action in legal:
                             state.apply_action(action)
+                            print_eval(state)
                             last_move_uci = uci
-                            onMove = otherPlayer(onMove)
 
                         else:
                             print("Illegal move:", uci)
@@ -249,13 +249,12 @@ async def ws_endpoint(ws: WebSocket):
                     # Send updated board
                     await send_state(ws, state, last_move_uci)
 
-                    if onMove == 'white' and whitePlayer in ["bot", "random"] or onMove == 'black' and blackPlayer in ["bot", "random"]:
+                    if (whiteOnMove(state) and whitePlayer in ["bot", "random"]) or (blackOnMove(state) and blackPlayer in ["bot", "random"]):
                         if not state.is_terminal():
-                            if onMove == 'white' and whitePlayer == "bot" or onMove == 'black' and blackPlayer == 'bot':
+                            if (whiteOnMove(state) and whitePlayer) == "bot" or (blackOnMove(state) and blackPlayer == 'bot'):
                                 last_move_uci = apply_mcts_move(state, mcts_bot)
                             else:
                                  last_move_uci = apply_random_move(state)
-                        onMove = otherPlayer(onMove)
                         await send_state(ws, state, last_move_uci)
 
     except WebSocketDisconnect:
@@ -280,16 +279,16 @@ async def send_state(ws, state, last_move):
 
 #playBotGame(ws=ws, state=state, blackPlayer=blackPlayer, whitePlayer=whitePlayer)
 async def playBotGame(ws, state, blackPlayer, whitePlayer):
-    onMove = 'white'
+    print('blackPlayer', blackPlayer, 'whitePlayer', whitePlayer)
     while True:
         last_move_uci = None
         if state.is_terminal():
             break
-        if (onMove == 'white' and whitePlayer == "bot") or (onMove == 'black' and blackPlayer == 'bot'):
+
+        if (whiteOnMove(state) and whitePlayer == 'bot') or (blackOnMove(state) and blackPlayer == 'bot'):
             last_move_uci = apply_mcts_move(state, mcts_bot)
         else:
              last_move_uci = apply_random_move(state)
         if last_move_uci:
-            onMove = otherPlayer(onMove)
             await send_state(ws, state, last_move_uci)
             await asyncio.sleep(1)
