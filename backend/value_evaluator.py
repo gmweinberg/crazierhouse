@@ -7,7 +7,8 @@ class ValueNetEvaluator(Evaluator):
         self.game = game
         self.model = model
         self.device = device
-        self.model.eval()
+        #self.model.eval()
+        self.model.train()
 
         # cache expected shape once
         self.obs_shape = tuple(game.observation_tensor_shape())  # (38,8,8)
@@ -30,9 +31,25 @@ class ValueNetEvaluator(Evaluator):
 
         return [v0, -v0]
 
+
     def prior(self, state):
         legal = state.legal_actions()
         if not legal:
             return []
-        p = 1.0 / len(legal)
-        return [(a, p) for a in legal]
+
+        x = self._obs(state)
+        with torch.no_grad():
+            logits, _ = self.model(x)
+
+        logits = logits.squeeze(0).cpu().numpy()
+
+        # Mask illegal moves
+        mask = np.zeros_like(logits)
+        mask[legal] = 1.0
+
+        probs = np.exp(logits - np.max(logits))
+        probs *= mask
+        probs /= probs.sum()
+
+        return [(a, float(probs[a])) for a in legal]
+

@@ -16,7 +16,7 @@ def get_mcts_stuff():
     mcts_bot =  mcts.MCTSBot(
         game=game,
         uct_c=1.4,
-        max_simulations=400,
+        max_simulations=800,
         evaluator=evaluator,
         solve=False,
         random_state=np.random.RandomState(0),

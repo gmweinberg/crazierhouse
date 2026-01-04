@@ -52,10 +52,11 @@ class PVNet(nn.Module):
             nn.Conv2d(channels, 2, kernel_size=1),
             nn.ReLU(),
         )
-        self.value_head = nn.Sequential(
-            nn.Conv2d(channels, 1, kernel_size=1),
-            nn.ReLU(),
-        )
+        self.value_head = nn.Conv2d(channels, 1, kernel_size=1)
+        #self.value_head = nn.Sequential(
+        #    nn.Conv2d(channels, 1, kernel_size=1),
+        #    nn.ReLU(),
+        #)
 
         # 8x8 board
         self.policy_fc = nn.Linear(2 * 8 * 8, num_actions)
@@ -64,6 +65,7 @@ class PVNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         # x: (B,C,H,W)
+        # self.debug_value(x)
         h = self.trunk(x)
 
         # Policy
@@ -76,6 +78,42 @@ class PVNet(nn.Module):
         v = torch.tanh(self.value_fc2(v)).squeeze(-1)  # (B,)
 
         return logits, v
+
+    def debug_value(self, x):
+        with torch.no_grad():
+            h = self.trunk(x)
+
+            print(
+                "TRUNK h mean/std/min/max:",
+                h.mean().item(),
+                h.std().item(),
+                h.min().item(),
+                h.max().item(),
+            )
+
+            vv = self.value_head(h)
+            print(
+                "value_head(h) mean/std/min/max:",
+                vv.mean().item(),
+                vv.std().item(),
+                vv.min().item(),
+                vv.max().item(),
+            )
+
+            vflat = vv.flatten(1)
+
+            v1 = F.relu(self.value_fc1(vflat))
+            print(
+                "value_fc1 out mean/std/min/max:",
+                v1.mean().item(),
+                v1.std().item(),
+                v1.min().item(),
+                v1.max().item(),
+            )
+
+            v2 = torch.tanh(self.value_fc2(v1)).squeeze(-1)
+            print("FINAL v:", v2.item())
+
 
 
 # ----------------------------
@@ -110,7 +148,7 @@ def masked_softmax(logits: torch.Tensor, mask: torch.Tensor, dim: int = -1) -> t
 
 def run_mcts(state: pyspiel.State,
              net: PVNet,
-             num_simulations: int = 100,
+             num_simulations: int = 800,
              c_puct: float = 1.5,
              temperature: float = 1.0):
     """
@@ -225,6 +263,8 @@ def run_mcts(state: pyspiel.State,
         a = np.random.choice(num_actions, p=pi)
 
     return pi, int(a)
+
+
 
 @dataclass
 class BatchStats:
@@ -445,7 +485,7 @@ def main():
     # Training params
     temperature = 1.0        # >1 more random, <1 more greedy
     value_coef = 10.0
-    entropy_coef = 0.01
+    entropy_coef = 0.001
 
     while True:
         g += 1

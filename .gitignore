@@ -1,6 +1,7 @@
 crap
 *.swp
 *.pt
+miles/
 
 __pycache__/
 *.pyc
