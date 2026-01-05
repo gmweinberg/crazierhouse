@@ -56,8 +56,6 @@ def print_eval(state):
     v = evaluator.evaluate(state)
     print(v)
 
-
-
 def terminal_payload(state):
     returns = state.returns()
     print(returns)
@@ -184,22 +182,29 @@ async def ws_endpoint(ws: WebSocket):
                 blackPlayer = data.get("blackPlayer", "bot")
 
                 startpos = data.get("startpos", "standard")
-                insanity = int(data.get("insanity", 1))  # unused for now
-
-                # Standard chess
-                if startpos == "standard":
-                    game = pyspiel.load_game("crazyhouse")
-                    state = game.new_initial_state()
-
-                # Chess960
-                elif startpos == "random":
-                    game = pyspiel.load_game("crazyhouse(chess960=true)")
-                    state = game.new_initial_state()
+                insanity = int(data.get("insanity", 1))
+                koth = bool(data.get("koth", False))
+                chance_node = False
+                game_params = ""
+                if startpos == "random":
+                    chance_node = True
+                    game_params = "chess960=true"
+                if koth:
+                    if game_params:
+                        game_params += ","
+                    game_params += "king_of_hill=true"
+                if insanity != 1:
+                    if game_params:
+                        game_params += ","
+                    game_params += "insanity=" + str(insanity)
+                if game_params:
+                    game_params = "(" + game_params + ")"
+                print("game_params", game_params)
+                game_string = "crazyhouse" + game_params
+                game = pyspiel.load_game(game_string)
+                state = game.new_initial_state()
+                if chance_node:
                     apply_chess960_nature(state)
-
-                else:
-                    game = pyspiel.load_game("crazyhouse")
-                    state = game.new_initial_state()
                 print("state", state)
 
                 # If human plays black, AI moves first
@@ -220,7 +225,7 @@ async def ws_endpoint(ws: WebSocket):
             #                PLAYER MOVE
             # ----------------------------------------
             if cmd == "move" and game is not None and state is not None:
-                if (white_on_move(state) and whitePlayer == 'human') or (blackOnMove(state) and blackPlayer == 'human'):
+                if (whiteOnMove(state) and whitePlayer == 'human') or (blackOnMove(state) and blackPlayer == 'human'):
                     uci = data.get("uci", None)
                     last_move_uci = None
 

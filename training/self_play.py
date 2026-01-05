@@ -8,6 +8,8 @@ from value_evaluator import ValueNetEvaluator
 from train_value_policy import PVNet
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+black = None
+white = None
 #TODO: support variants
 def get_game():
     game = pyspiel.load_game("crazyhouse")
@@ -59,6 +61,7 @@ def make_bot(game, model, device, seed=None, max_sims=800):
 
 def run_match(old_model, new_model, num_pairs):
     game = get_game()
+    set_player_ids(game)
 
     stats = {
         "new": 0,
@@ -95,9 +98,9 @@ def update_stats(stats, returns, new_white):
         winner = 0 if returns[0] > 0 else 1
 
         if new_white:
-            new_player = 0
+            new_player = white
         else:
-            new_player = 1
+            new_player = black
 
         if winner == new_player:
             stats["new"] += 1
@@ -113,6 +116,18 @@ def report(stats, games):
         f"Draw: {stats['draw']} | "
         f"New winrate: {winrate:.3f}"
     )
+
+def set_player_ids(game):
+    global black
+    global white
+    for pid in range(game.num_players()):
+        name = game.player_to_string(pid).lower()
+        if "black" in name:
+            black = pid
+        elif "white" in name:
+            white = pid
+    assert black is not None and white is not None
+    return black, white
 
 if __name__ == '__main__':
     from argparse import ArgumentParser

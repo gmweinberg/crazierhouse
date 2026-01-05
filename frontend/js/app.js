@@ -8,6 +8,8 @@ const blackPlayer = urlParams.get("blackPlayer") || "bot";
 const gameSide = 'white';
 const gameStartpos = urlParams.get("startpos") || "standard";
 const gameInsanity = urlParams.get("insanity") || "1";
+const koth =  urlParams.get("koth") || "";
+
 
 //-------------------------------------------------------------
 // Global variables
@@ -74,7 +76,8 @@ function openConnection() {
       whitePlayer: whitePlayer,
       blackPlayer: blackPlayer,
       startpos: gameStartpos,
-      insanity: gameInsanity
+      insanity: gameInsanity,
+      koth: koth
     }));
   };
 
