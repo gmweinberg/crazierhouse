@@ -9,6 +9,7 @@ const gameSide = 'white';
 const gameStartpos = urlParams.get("startpos") || "standard";
 const gameInsanity = urlParams.get("insanity") || "1";
 const koth =  urlParams.get("koth") || "";
+const fen = decodeURIComponent(urlParams.get("fen") ?? "");
 
 
 //-------------------------------------------------------------
@@ -50,7 +51,6 @@ window.addEventListener("load", () => {
       boardDiv.appendChild(div);
     }
   }
-
   // Now that DOM is ready, open WebSocket
   openConnection();
 });
@@ -77,7 +77,8 @@ function openConnection() {
       blackPlayer: blackPlayer,
       startpos: gameStartpos,
       insanity: gameInsanity,
-      koth: koth
+      koth: koth,
+			fen:fen
     }));
   };
 
@@ -95,7 +96,7 @@ function openConnection() {
           renderPocket("comp-pocket", white);
 	  }
 
-    }
+  }
 	if (msg.type === "terminal") {
 	  let text;
 	  if (msg.result === "white_win") text = "White wins!";
@@ -124,6 +125,7 @@ function drawBoard(board) {
     }
   }
 }
+
 
 //-------------------------------------------------------------
 // Square click handling

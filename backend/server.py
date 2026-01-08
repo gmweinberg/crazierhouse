@@ -100,6 +100,33 @@ FEN_TO_UNICODE = {
     "k": "♚",
 }
 
+def un_unicode(char):
+    if char == "♙":
+        return 'P'
+    if char == "♘":
+        return 'N'
+    if char == "♗":
+        return 'B'
+    if char == "♖":
+        return 'R'
+    if char == "♕":
+        return 'Q'
+    if char == "♔":
+        return 'K'
+    if char == "♟":
+        return 'p'
+    if char == "♞":
+        return 'n'
+    if char == "♝":
+        return 'b'
+    if char == "♜":
+        return 'r'
+    if char == "♛":
+        return 'q'
+    if char == "♚":
+        return 'k'
+    return char
+
 
 def fen_to_board(fen: str):
     """Convert FEN into 8×8 array of Unicode chess pieces."""
@@ -119,6 +146,25 @@ def fen_to_board(fen: str):
 
     return board
 
+def board_to_fen(board):
+    rows = []
+    for rank in board:
+        empty = 0
+        row = ""
+        for sq in rank:
+            if sq is None or sq == "." or sq == '':
+                empty += 1
+            else:
+                if empty:
+                    row += str(empty)
+                    empty = 0
+                row += un_unicode(sq)
+        if empty:
+            row += str(empty)
+        rows.append(row)
+    return "/".join(rows)
+
+
 def parse_fen_pockets(fen: str):
     pockets = {"white": {}, "black": {}}
 
@@ -134,6 +180,20 @@ def parse_fen_pockets(fen: str):
             pockets["black"][ch] = pockets["black"].get(ch, 0) + 1
 
     return pockets
+
+def pockets_to_fen(pockets):
+    s = ""
+
+    # White pocket (uppercase)
+    for piece in ["P", "N", "B", "R", "Q"]:
+        s += piece * pockets["white"].get(piece, 0)
+
+    # Black pocket (lowercase)
+    for piece in ["p", "n", "b", "r", "q"]:
+        s += piece * pockets["black"].get(piece, 0)
+
+    return f"[{s}]"
+
 
 
 def apply_chess960_nature(state):
@@ -152,6 +212,39 @@ def whiteOnMove(state):
 def blackOnMove(state):
     return not whiteOnMove(state)
 
+def maybe_bot_move(state, players):
+    if players.human_on_move(state):
+        return
+    if state.is_terminal():
+        return
+    if (whiteOnMove(state) and players.white) == "bot" or (blackOnMove(state) and players.black == 'bot'):
+        last_move_uci = apply_mcts_move(state, mcts_bot)
+    else:
+         last_move_uci = apply_random_move(state)
+    return last_move_uci
+
+def get_game_string(data):
+    startpos = data.get("startpos", "standard")
+    insanity = int(data.get("insanity", 1))
+    koth = bool(data.get("koth", False))
+    chance_node = False
+    game_params = ""
+    if startpos == "random":
+        chance_node = True
+        game_params = "chess960=true"
+    if koth:
+        if game_params:
+            game_params += ","
+        game_params += "king_of_hill=true"
+    if insanity != 1:
+        if game_params:
+            game_params += ","
+        game_params += "insanity=" + str(insanity)
+    if game_params:
+        game_params = "(" + game_params + ")"
+    print("game_params", game_params)
+    game_string = "crazyhouse" + game_params
+    return game_string
 
 # ----------------------------------------------------
 # WebSocket endpointstate
@@ -164,10 +257,11 @@ async def ws_endpoint(ws: WebSocket):
     state = None
     whitePlayer = None
     blackPlayer = None
-    onMove = "white"
+    position = None
 
     try:
         while True:
+            handled = False
             data = await ws.receive_json()
             cmd = data.get("cmd")
             print("cmd", cmd)
@@ -176,94 +270,171 @@ async def ws_endpoint(ws: WebSocket):
             #                NEW GAME
             # ----------------------------------------
             if cmd == "newgame":
+                handled = True
                 print('data', data)
                 #side = data.get("side", "white")
                 whitePlayer = data.get("whitePlayer", "human")
                 blackPlayer = data.get("blackPlayer", "bot")
+                players = Players(data)
 
                 startpos = data.get("startpos", "standard")
-                insanity = int(data.get("insanity", 1))
-                koth = bool(data.get("koth", False))
                 chance_node = False
-                game_params = ""
                 if startpos == "random":
                     chance_node = True
-                    game_params = "chess960=true"
-                if koth:
-                    if game_params:
-                        game_params += ","
-                    game_params += "king_of_hill=true"
-                if insanity != 1:
-                    if game_params:
-                        game_params += ","
-                    game_params += "insanity=" + str(insanity)
-                if game_params:
-                    game_params = "(" + game_params + ")"
-                print("game_params", game_params)
-                game_string = "crazyhouse" + game_params
+                game_string = get_game_string(data)
                 game = pyspiel.load_game(game_string)
-                state = game.new_initial_state()
-                if chance_node:
-                    apply_chess960_nature(state)
+                fen = data.get('fen')
+                if fen:
+                    state = game.new_initial_state(fen)
+                else:
+                    state = game.new_initial_state()
+                    if chance_node:
+                        apply_chess960_nature(state)
                 print("state", state)
-
-                # If human plays black, AI moves first
-                if whitePlayer in ['bot', 'random']:
-                    if whitePlayer == 'bot' and not state.is_terminal():
-                        last_move_uci = apply_mcts_move(state, mcts_bot)
-                    elif whitePlayer == 'random' and not state.is_terminal():
-                        last_move_uci = apply_random_move(state)
+                if players.all_bots():
+                    await playBotGame(ws=ws, state=state, players=players)
 
                 # Send initial board
                 await send_state(ws, state, None)
+                last_move_uci = maybe_bot_move(state, players)
+                if last_move_uci:
+                    await send_state(ws, state, last_move_uci)
 
-                if blackPlayer in ["bot", "random"] and whitePlayer in ["bot","random"]:
-                    await playBotGame(ws=ws, state=state, blackPlayer=blackPlayer, whitePlayer=whitePlayer)
-                continue
 
             # ----------------------------------------
             #                PLAYER MOVE
             # ----------------------------------------
-            if cmd == "move" and game is not None and state is not None:
-                if (whiteOnMove(state) and whitePlayer == 'human') or (blackOnMove(state) and blackPlayer == 'human'):
-                    uci = data.get("uci", None)
-                    last_move_uci = None
+            if cmd == "move":
+                handled = True
+                if game is not None and state is not None:
+                    if players.human_on_move(state):
+                        uci = data.get("uci", None)
+                        last_move_uci = None
 
-                    if uci is None:
-                        print("Client did not send UCI move!")
-                    else:
-                        # Parse human move
-                        try:
-                            print("uci", uci)
-                            action = state.parse_move_to_action(uci)
-                        except Exception as e:
-                            print("parse_move_to_action failed for", uci, e)
-                            action = None
-
-                        legal = state.legal_actions()
-
-                        # Apply human move
-                        if action is not None and action in legal:
-                            state.apply_action(action)
-                            print_eval(state)
-                            last_move_uci = uci
-
+                        if uci is None:
+                            print("Client did not send UCI move!")
                         else:
-                            print("Illegal move:", uci)
+                            # Parse human move
+                            try:
+                                print("uci", uci)
+                                action = state.parse_move_to_action(uci)
+                            except Exception as e:
+                                print("parse_move_to_action failed for", uci, e)
+                                action = None
 
-                    # Send updated board
-                    await send_state(ws, state, last_move_uci)
+                            legal = state.legal_actions()
 
-                    if (whiteOnMove(state) and whitePlayer in ["bot", "random"]) or (blackOnMove(state) and blackPlayer in ["bot", "random"]):
-                        if not state.is_terminal():
-                            if (whiteOnMove(state) and whitePlayer) == "bot" or (blackOnMove(state) and blackPlayer == 'bot'):
-                                last_move_uci = apply_mcts_move(state, mcts_bot)
+                            # Apply human move
+                            if action is not None and action in legal:
+                                state.apply_action(action)
+                                print_eval(state)
+                                last_move_uci = uci
+
                             else:
-                                 last_move_uci = apply_random_move(state)
-                        await send_state(ws, state, last_move_uci)
+                                print("Illegal move:", uci)
 
+                        # Send updated board
+                        await send_state(ws, state, last_move_uci)
+                        moved = maybe_bot_move(state, players)
+                        if moved:
+                            await send_state(ws, state, last_move_uci)
+
+            if cmd == "reset_position":
+                handled = True
+                game_string = get_game_string(data)
+                game = pyspiel.load_game(game_string)
+                state = game.new_initial_state()
+                fen = str(state)
+                position = Position(fen)
+                await send_position(ws, position)
+
+            if cmd == "set_square":
+                handled = True
+                print("data", data)
+                x = data.get('x')
+                y = data.get('y')
+                piece = data.get('piece')
+                print(position.board)
+                if x and y and (piece  is not None):
+                    position.set_square(x, y, piece)
+                    print("board", position.board)
+                    await send_position(ws, position)
+
+            if cmd == "get_fen":
+                handled = True
+                fen = position.to_fen()
+                print("fen", fen)
+                await send_fen(ws, fen)
+
+
+            if cmd == "round_trip_fen":
+                handled = True
+                fen = data.get('fen')
+                new_pos = Position(fen)
+                new_fen = new_pos.to_fen()
+                print("old", fen)
+                print("new", new_fen)
+
+
+            if not handled:
+                print("unknown command", data)
     except WebSocketDisconnect:
         return
+
+class Position():
+    def __init__(self, fen):
+        self.board = fen_to_board(fen)
+        self.pockets = parse_fen_pockets(fen)
+        self.white_castle_king = True
+        self.white_castle_queen = True
+        self.black_castle_king = True
+        self.black_castle_queen = True
+        self.moves = 0
+        self.to_move = "white"
+        self.epsquare = None
+
+    def set_square(self, x, y, piece):
+        self.board[y][x] = piece
+
+    def pocket(inc, piece, color):
+        pass
+
+    def castling(self):
+        result = ''
+        result += 'K' if  self.white_castle_king else ''
+        result += 'Q' if  self.white_castle_queen else ''
+        result += 'k' if self.black_castle_king else ''
+        result += 'q' if self.black_castle_queen else ''
+        return result
+
+    def to_fen(self):
+        board_part = board_to_fen(self.board)
+        pocket_part = pockets_to_fen(self.pockets)
+
+        side = "w" if self.to_move == "white" else "b"
+        castling = self.castling()
+        ep = self.epsquare if self.epsquare else '-'
+
+        halfmove = "0"        # Crazyhouse engines usually ignore this
+        fullmove = str(self.moves + 1)
+
+        #return f"{board_part}{pocket_part} {side} {castling} {ep} {halfmove} {fullmove}"
+        return f"{board_part} {side} {castling} {ep} {halfmove} {fullmove}"
+
+class Players:
+    def __init__(self, data):
+        self.white = data.get("whitePlayer", "human")
+        self.black = data.get("blackPlayer", "bot")
+
+    def all_bots(self):
+        if self.white in ['bot', 'random'] and self.black in ['bot', 'random']:
+            return True
+        return False
+
+    def human_on_move(self, state):
+        if (self.white == 'human' and whiteOnMove(state)) or (self.black == 'human' and blackOnMove(state)):
+            return True
+        return False
 
 async def send_state(ws, state, last_move):
     # Send updated board
@@ -282,15 +453,31 @@ async def send_state(ws, state, last_move):
         print("this is the end")
         await ws.send_json(terminal_payload(state))
 
+async def send_position(ws, position):
+    # Send updated board
+
+    await ws.send_json({
+        "type": "state",
+        "board": position.board,
+        "pockets": position.pockets
+    })
+
+async def send_fen(ws, fen):
+    await ws.send_json({
+        "type": "fen",
+        "fen": fen
+    })
+
+
 #playBotGame(ws=ws, state=state, blackPlayer=blackPlayer, whitePlayer=whitePlayer)
-async def playBotGame(ws, state, blackPlayer, whitePlayer):
-    print('blackPlayer', blackPlayer, 'whitePlayer', whitePlayer)
+async def playBotGame(ws, state, players):
+    print('blackPlayer', players.black, 'whitePlayer', players.white)
     while True:
         last_move_uci = None
         if state.is_terminal():
             break
 
-        if (whiteOnMove(state) and whitePlayer == 'bot') or (blackOnMove(state) and blackPlayer == 'bot'):
+        if (whiteOnMove(state) and players.white == 'bot') or (blackOnMove(state) and players.black == 'bot'):
             last_move_uci = apply_mcts_move(state, mcts_bot)
         else:
              last_move_uci = apply_random_move(state)

@@ -2,12 +2,53 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Chess Lobby</title>
+<title>Crazy Lab</title>
 <style>
   body { font-family: sans-serif; margin: 40px; }
-  #container { max-width: 300px; }
   label { display: inline-block; width: 80px; }
   select, button { margin: 10px 0; font-size: 16px; }
+
+  #game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 60px);
+    grid-template-rows: repeat(8, 60px);
+    border: 2px solid black;
+    user-select: none;
+  }
+	#control-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+	#pieces {
+    display: grid;
+    grid-template-columns: repeat(11, 60px);
+    grid-template-rows: repeat(2, 60px);
+    border: 2px solid black;
+    user-select: none;
+	}
+  .square {
+    width: 60px;
+    height: 60px;
+    font-size: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+  }
+  .light { background-color: #f0d9b5; }
+  .dark  { background-color: #b58863; }
+  .selected {
+    outline: 3px solid yellow;
+  }
+
 </style>
 </head>
 
@@ -58,29 +99,27 @@
   </label>
 </div>
 
-  <button onclick="launchGame()">Launch Game</button>
+  <button id="launch">Launch Game</button>
+  <button>Reset Position</button>
+<div id="control-container">
+	<div id="pieces"></div>
 </div>
 
-<script>
-function launchGame() {
-  //const side = document.getElementById("side").value;
+<div id="game-container">
+<div id="comp-pocket" class="pocket"></div>
 
-  const whitePlayer = document.getElementById("white-player").value;
-  const blackPlayer = document.getElementById("black-player").value;
-  const startpos = document.getElementById("startpos").value;
-  const insanity = document.getElementById("insanity").value;
-  const koth = document.getElementById("koth").value;
+<div id="board"></div>
 
-  // Pass the game settings to game.html via URL query params
-  const url =
-		`game.html?whitePlayer=${whitePlayer}&blackPlayer=${blackPlayer}&startpos=${startpos}&insanity=${insanity}&koth=${koth}`;
-  const win = window.open(url, "_blank");
-	if (win) {
-		win.focus();
-	}
-}
 
-</script>
+<div id="status"></div>
+
+<div id="human-pocket" class="pocket"></div>
+
+
+</div>
+
+<script src="js/lab.js"></script>
+
 
 </body>
 </html>
