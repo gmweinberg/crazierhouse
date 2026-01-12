@@ -227,6 +227,7 @@ def get_game_string(data):
     startpos = data.get("startpos", "standard")
     insanity = int(data.get("insanity", 1))
     koth = bool(data.get("koth", False))
+    sticky = bool(data.get("sticky", False))
     chance_node = False
     game_params = ""
     if startpos == "random":
@@ -236,6 +237,10 @@ def get_game_string(data):
         if game_params:
             game_params += ","
         game_params += "king_of_hill=true"
+    if sticky:
+        if game_params:
+            game_params += ","
+        game_params += "sticky_promotions=true"
     if insanity != 1:
         if game_params:
             game_params += ","
@@ -418,8 +423,8 @@ class Position():
         halfmove = "0"        # Crazyhouse engines usually ignore this
         fullmove = str(self.moves + 1)
 
-        #return f"{board_part}{pocket_part} {side} {castling} {ep} {halfmove} {fullmove}"
-        return f"{board_part} {side} {castling} {ep} {halfmove} {fullmove}"
+        return f"{board_part}{pocket_part} {side} {castling} {ep} {halfmove} {fullmove}"
+        #return f"{board_part} {side} {castling} {ep} {halfmove} {fullmove}"
 
 class Players:
     def __init__(self, data):

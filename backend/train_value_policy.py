@@ -504,11 +504,6 @@ def main():
                "optimizer": optimizer.state_dict(),
                "game": g,
             }, f"crazyhouse_pvnet_run_{g}.pt")
-            torch.save({
-               "model": net.state_dict(),
-               "optimizer": optimizer.state_dict(),
-               "game": g,
-            }, "crazyhouse_pvnet_latest.pt")
             print(batch_stats.report())
 
             batch_stats.reset()

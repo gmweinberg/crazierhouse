@@ -175,8 +175,16 @@ function onLaunchClick(evt){
 }
 
 function launchGame(fen){
-	const encodedFen = encodeURIComponent(fen);
+	console.log("ho ho ho");
+	const forced_fen = document.getElementById('force-fen').value.trim();
+	let encodedFen;
+	if (forced_fen) {
+		encodedFen = encodeURIComponent(forced_fen);
+	} else {
+		encodedFen = encodeURIComponent(fen);
+	}
 	const koth = document.getElementById('koth').checked ? 'true': '';
+	const sticky = document.getElementById('sticky').checked ? 'true': '';
 	const whitePlayer = document.getElementById('white-player').value;
 	const blackPlayer = document.getElementById('black-player').value;
 	const insanity = document.getElementById('insanity').value;
@@ -187,6 +195,7 @@ function launchGame(fen){
     startpos,
     insanity,
     koth,
+		sticky,
     fen: encodedFen
   });
 

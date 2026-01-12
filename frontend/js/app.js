@@ -1,6 +1,7 @@
 //-------------------------------------------------------------
 // Parse URL query parameters from lobby.html → game.html
 //-------------------------------------------------------------
+//
 const urlParams = new URLSearchParams(window.location.search);
 const whitePlayer = urlParams.get("whitePlayer") || "human";
 const blackPlayer = urlParams.get("blackPlayer") || "bot";
@@ -9,6 +10,7 @@ const gameSide = 'white';
 const gameStartpos = urlParams.get("startpos") || "standard";
 const gameInsanity = urlParams.get("insanity") || "1";
 const koth =  urlParams.get("koth") || "";
+const sticky =  urlParams.get("sticky") || "";
 const fen = decodeURIComponent(urlParams.get("fen") ?? "");
 
 
@@ -78,6 +80,7 @@ function openConnection() {
       startpos: gameStartpos,
       insanity: gameInsanity,
       koth: koth,
+			sticky:sticky,
 			fen:fen
     }));
   };
