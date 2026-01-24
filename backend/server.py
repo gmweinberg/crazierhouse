@@ -10,6 +10,7 @@ from train_value_policy import PVNet  # or wherever you defined it
 import numpy as np
 import torch.nn.functional as F
 from min_mcts import get_mcts_stuff
+from crazyhouse import Crazyhouse, fen_to_board, board_to_fen, parse_fen_pockets, pockets_to_fen
 
 app = FastAPI()
 
@@ -35,7 +36,7 @@ def apply_mcts_move(state, mcts_bot):
     if ai_action not in state.legal_actions():
         print("ILLEGAL ACTION:", ai_action)
         print("LEGAL:", state.legal_actions())
-        raise RuntimeError("Illegal MCTS action")
+        raise RuntimeError("Iget_initial_statellegal MCTS action")
     ai_uci = state.action_to_string(ai_action)
     v = evaluator.evaluate(state)
     print(state.current_player(), v)
@@ -73,137 +74,6 @@ def terminal_payload(state):
     }
 
 
-# ----------------------------------------------------
-# Unicode mapping for FEN chars. 
-# We draw the promoted pieces looking like the regular ones
-# ----------------------------------------------------
-FEN_TO_UNICODE = {
-    "P": "♙",
-    "N": "♘",
-    "H":  "♘",
-    "B": "♗",
-    "A": "♗",
-    "R": "♖",
-    "C": "♖",
-    "Q": "♕",
-    "E": "♕",
-    "K": "♔",
-    "p": "♟",
-    "n": "♞",
-    "h": "♞",
-    "b": "♝",
-    "a": "♝",
-    "r": "♜",
-    "c": "♜",
-    "q": "♛",
-    "e": "♛",
-    "k": "♚",
-}
-
-def un_unicode(char):
-    if char == "♙":
-        return 'P'
-    if char == "♘":
-        return 'N'
-    if char == "♗":
-        return 'B'
-    if char == "♖":
-        return 'R'
-    if char == "♕":
-        return 'Q'
-    if char == "♔":
-        return 'K'
-    if char == "♟":
-        return 'p'
-    if char == "♞":
-        return 'n'
-    if char == "♝":
-        return 'b'
-    if char == "♜":
-        return 'r'
-    if char == "♛":
-        return 'q'
-    if char == "♚":
-        return 'k'
-    return char
-
-
-def fen_to_board(fen: str):
-    """Convert FEN into 8×8 array of Unicode chess pieces."""
-    piece_field = fen.split()[0]
-    rows = piece_field.split("/")
-    board = []
-
-    for row in rows:
-        cells = []
-        for ch in row:
-            if ch.isdigit():
-                cells.extend([""] * int(ch))
-            else:
-                cells.append(FEN_TO_UNICODE.get(ch, ""))
-        # Ensure row is 8 wide
-        board.append(cells[:8] + [""] * (8 - len(cells)))
-
-    return board
-
-def board_to_fen(board):
-    rows = []
-    for rank in board:
-        empty = 0
-        row = ""
-        for sq in rank:
-            if sq is None or sq == "." or sq == '':
-                empty += 1
-            else:
-                if empty:
-                    row += str(empty)
-                    empty = 0
-                row += un_unicode(sq)
-        if empty:
-            row += str(empty)
-        rows.append(row)
-    return "/".join(rows)
-
-
-def parse_fen_pockets(fen: str):
-    pockets = {"white": {}, "black": {}}
-
-    if "[" not in fen:
-        return pockets
-
-    pocket_str = fen[fen.index("[")+1 : fen.index("]")]
-
-    for ch in pocket_str:
-        if ch.isupper():
-            pockets["white"][ch] = pockets["white"].get(ch, 0) + 1
-        else:
-            pockets["black"][ch] = pockets["black"].get(ch, 0) + 1
-
-    return pockets
-
-def pockets_to_fen(pockets):
-    s = ""
-
-    # White pocket (uppercase)
-    for piece in ["P", "N", "B", "R", "Q"]:
-        s += piece * pockets["white"].get(piece, 0)
-
-    # Black pocket (lowercase)
-    for piece in ["p", "n", "b", "r", "q"]:
-        s += piece * pockets["black"].get(piece, 0)
-
-    return f"[{s}]"
-
-
-
-def apply_chess960_nature(state):
-    """Apply the Chess960 nature move (random starting setup)."""
-    if state.is_chance_node():
-        outcomes = state.chance_outcomes()
-        actions, probs = zip(*outcomes)
-        action = random.choices(actions, probs)[0]
-        state.apply_action(action)
-
 def whiteOnMove(state):
     if state.current_player() == 1:
         return True
@@ -223,35 +93,13 @@ def maybe_bot_move(state, players):
          last_move_uci = apply_random_move(state)
     return last_move_uci
 
-def get_game_string(data):
-    startpos = data.get("startpos", "standard")
-    insanity = int(data.get("insanity", 1))
-    koth = bool(data.get("koth", False))
-    sticky = bool(data.get("sticky", False))
-    chance_node = False
-    game_params = ""
-    if startpos == "random":
-        chance_node = True
-        game_params = "chess960=true"
-    if koth:
-        if game_params:
-            game_params += ","
-        game_params += "king_of_hill=true"
-    if sticky:
-        if game_params:
-            game_params += ","
-        game_params += "sticky_promotions=true"
-    if insanity != 1:
-        if game_params:
-            game_params += ","
-        game_params += "insanity=" + str(insanity)
-    if game_params:
-        game_params = "(" + game_params + ")"
-    print("game_params", game_params)
-    game_string = "crazyhouse" + game_params
-    return game_string
+def get_server_class(game_name):
+    if game_name == "crazyhouse":
+        return Crazyhouse()
+    raise Exception("Invalid game name")
 
-# ----------------------------------------------------
+
+# ------------------ await ws.send_json(data)----------------------------------
 # WebSocket endpointstate
 # ----------------------------------------------------
 @app.websocket("/ws")
@@ -260,16 +108,18 @@ async def ws_endpoint(ws: WebSocket):
 
     game = None
     state = None
-    whitePlayer = None
-    blackPlayer = None
     position = None
+    server_class = None
 
     try:
         while True:
             handled = False
             data = await ws.receive_json()
+            data['game'] = 'crazyhouse' # for now
             cmd = data.get("cmd")
             print("cmd", cmd)
+            if server_class is None:
+                server_class = get_server_class(data['game'])
 
             # ----------------------------------------
             #                NEW GAME
@@ -278,23 +128,8 @@ async def ws_endpoint(ws: WebSocket):
                 handled = True
                 print('data', data)
                 #side = data.get("side", "white")
-                whitePlayer = data.get("whitePlayer", "human")
-                blackPlayer = data.get("blackPlayer", "bot")
                 players = Players(data)
-
-                startpos = data.get("startpos", "standard")
-                chance_node = False
-                if startpos == "random":
-                    chance_node = True
-                game_string = get_game_string(data)
-                game = pyspiel.load_game(game_string)
-                fen = data.get('fen')
-                if fen:
-                    state = game.new_initial_state(fen)
-                else:
-                    state = game.new_initial_state()
-                    if chance_node:
-                        apply_chess960_nature(state)
+                state = server_class.get_initial_state(data)
                 print("state", state)
                 if players.all_bots():
                     await playBotGame(ws=ws, state=state, players=players)
@@ -311,7 +146,7 @@ async def ws_endpoint(ws: WebSocket):
             # ----------------------------------------
             if cmd == "move":
                 handled = True
-                if game is not None and state is not None:
+                if state is not None:
                     if players.human_on_move(state):
                         uci = data.get("uci", None)
                         last_move_uci = None
@@ -344,87 +179,16 @@ async def ws_endpoint(ws: WebSocket):
                         if moved:
                             await send_state(ws, state, last_move_uci)
 
-            if cmd == "reset_position":
-                handled = True
-                game_string = get_game_string(data)
-                game = pyspiel.load_game(game_string)
-                state = game.new_initial_state()
-                fen = str(state)
-                position = Position(fen)
-                await send_position(ws, position)
-
-            if cmd == "set_square":
-                handled = True
-                print("data", data)
-                x = data.get('x')
-                y = data.get('y')
-                piece = data.get('piece')
-                print(position.board)
-                if x and y and (piece  is not None):
-                    position.set_square(x, y, piece)
-                    print("board", position.board)
-                    await send_position(ws, position)
-
-            if cmd == "get_fen":
-                handled = True
-                fen = position.to_fen()
-                print("fen", fen)
-                await send_fen(ws, fen)
-
-
-            if cmd == "round_trip_fen":
-                handled = True
-                fen = data.get('fen')
-                new_pos = Position(fen)
-                new_fen = new_pos.to_fen()
-                print("old", fen)
-                print("new", new_fen)
-
+            if not handled:
+                result, handled = server_class.handle_command(data)
+                if result:
+                    await ws.send_json(result)
 
             if not handled:
                 print("unknown command", data)
     except WebSocketDisconnect:
         return
 
-class Position():
-    def __init__(self, fen):
-        self.board = fen_to_board(fen)
-        self.pockets = parse_fen_pockets(fen)
-        self.white_castle_king = True
-        self.white_castle_queen = True
-        self.black_castle_king = True
-        self.black_castle_queen = True
-        self.moves = 0
-        self.to_move = "white"
-        self.epsquare = None
-
-    def set_square(self, x, y, piece):
-        self.board[y][x] = piece
-
-    def pocket(inc, piece, color):
-        pass
-
-    def castling(self):
-        result = ''
-        result += 'K' if  self.white_castle_king else ''
-        result += 'Q' if  self.white_castle_queen else ''
-        result += 'k' if self.black_castle_king else ''
-        result += 'q' if self.black_castle_queen else ''
-        return result
-
-    def to_fen(self):
-        board_part = board_to_fen(self.board)
-        pocket_part = pockets_to_fen(self.pockets)
-
-        side = "w" if self.to_move == "white" else "b"
-        castling = self.castling()
-        ep = self.epsquare if self.epsquare else '-'
-
-        halfmove = "0"        # Crazyhouse engines usually ignore this
-        fullmove = str(self.moves + 1)
-
-        return f"{board_part}{pocket_part} {side} {castling} {ep} {halfmove} {fullmove}"
-        #return f"{board_part} {side} {castling} {ep} {halfmove} {fullmove}"
 
 class Players:
     def __init__(self, data):
@@ -457,21 +221,6 @@ async def send_state(ws, state, last_move):
     if state.is_terminal():
         print("this is the end")
         await ws.send_json(terminal_payload(state))
-
-async def send_position(ws, position):
-    # Send updated board
-
-    await ws.send_json({
-        "type": "state",
-        "board": position.board,
-        "pockets": position.pockets
-    })
-
-async def send_fen(ws, fen):
-    await ws.send_json({
-        "type": "fen",
-        "fen": fen
-    })
 
 
 #playBotGame(ws=ws, state=state, blackPlayer=blackPlayer, whitePlayer=whitePlayer)
