@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Gomoku Lobby</title>
+  <script defer src="js/gomoku_lobby.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: 2em auto;
+    }
+    fieldset {
+      margin-bottom: 1.5em;
+      padding: 1em;
+    }
+    label {
+      display: block;
+      margin: 0.5em 0;
+    }
+    button {
+      font-size: 1.1em;
+      padding: 0.5em 1em;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Gomoku Lobby</h1>
+
+  <fieldset>
+    <legend>Players</legend>
+
+    <label>
+      White:
+      <select id="white-player">
+        <option value="human">Human</option>
+        <option value="bot">Bot</option>
+        <option value="random">Random</option>
+      </select>
+    </label>
+
+    <label>
+      Black:
+      <select id="black-player">
+        <option value="human">Human</option>
+        <option value="bot">Bot</option>
+        <option value="random">Random</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Game Parameters</legend>
+
+    <label>
+      Board size:
+      <input id="size" type="number" value="15" min="1">
+    </label>
+
+    <label>
+      Dimensions:
+      <input id="dims" type="number" value="2" min="2">
+    </label>
+
+    <label>
+      Connect length:
+      <input id="connect" type="number" value="5" min="1">
+    </label>
+
+    <label>
+      <input id="wrap" type="checkbox">
+      Wrap board
+    </label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Style</legend>
+
+    <label>
+      <input type="radio" name="style" value="gomoku" checked>
+      Gomoku (stones on intersections)
+    </label>
+
+    <label>
+      <input type="radio" name="style" value="tictactoe">
+      Tic-Tac-Toe (X / O in squares)
+    </label>
+  </fieldset>
+
+  <button id="start-game">Start Game</button>
+
+</body>
+</html>

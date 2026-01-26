@@ -73,7 +73,7 @@ function launchGame() {
 
   // Pass the game settings to game.html via URL query params
   const url =
-		`game.html?whitePlayer=${whitePlayer}&blackPlayer=${blackPlayer}&startpos=${startpos}&insanity=${insanity}&koth=${koth}`;
+		`crazy_game.html?whitePlayer=${whitePlayer}&blackPlayer=${blackPlayer}&startpos=${startpos}&insanity=${insanity}&koth=${koth}`;
   const win = window.open(url, "_blank");
 	if (win) {
 		win.focus();

@@ -175,7 +175,6 @@ function onLaunchClick(evt){
 }
 
 function launchGame(fen){
-	console.log("ho ho ho");
 	const forced_fen = document.getElementById('force-fen').value.trim();
 	let encodedFen;
 	if (forced_fen) {
@@ -183,6 +182,7 @@ function launchGame(fen){
 	} else {
 		encodedFen = encodeURIComponent(fen);
 	}
+	const game = "crazyhouse";
 	const koth = document.getElementById('koth').checked ? 'true': '';
 	const sticky = document.getElementById('sticky').checked ? 'true': '';
 	const whitePlayer = document.getElementById('white-player').value;
@@ -190,6 +190,7 @@ function launchGame(fen){
 	const insanity = document.getElementById('insanity').value;
 	const startpos = document.getElementById('startpos').value;
 	const params = new URLSearchParams({
+		game,
     whitePlayer,
     blackPlayer,
     startpos,

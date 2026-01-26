@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Gomoku</title>
+
+  <script defer src="js/gomoku_game.js"></script>
+	<link rel="stylesheet" href="gomoku.css">
+
+</head>
+
+<body>
+
+  <h1>Gomoku</h1>
+
+  <!-- Sanity-check display of parameters -->
+  <div id="game-info">
+    <div><strong>Players:</strong>
+      White = <span id="white-player"></span>,
+      Black = <span id="black-player"></span>
+    </div>
+    <div><strong>Board:</strong>
+      size = <span id="size"></span>,
+      dims = <span id="dims"></span>,
+      connect = <span id="connect"></span>,
+      wrap = <span id="wrap"></span>
+    </div>
+    <div><strong>Style:</strong>
+      <span id="style"></span>
+    </div>
+  </div>
+
+  <!-- Slice controls (hidden/unused for now) -->
+  <div id="slice-controls">
+    <!-- Later: sliders or selectors for higher dimensions -->
+  </div>
+
+  <!-- Game status -->
+  <div id="status">
+    Initializing…
+  </div>
+
+  <!-- Board goes here -->
+	<div id="board-container">
+	<div id="board"></div>
+	</div>

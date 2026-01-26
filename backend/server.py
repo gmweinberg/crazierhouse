@@ -11,6 +11,7 @@ import numpy as np
 import torch.nn.functional as F
 from min_mcts import get_mcts_stuff
 from crazyhouse import Crazyhouse, fen_to_board, board_to_fen, parse_fen_pockets, pockets_to_fen
+from gomoku import Gomoku
 
 app = FastAPI()
 
@@ -36,7 +37,7 @@ def apply_mcts_move(state, mcts_bot):
     if ai_action not in state.legal_actions():
         print("ILLEGAL ACTION:", ai_action)
         print("LEGAL:", state.legal_actions())
-        raise RuntimeError("Iget_initial_statellegal MCTS action")
+        raise RuntimeError("Illegal MCTS action")
     ai_uci = state.action_to_string(ai_action)
     v = evaluator.evaluate(state)
     print(state.current_player(), v)
@@ -56,23 +57,6 @@ def apply_mcts_move(state, mcts_bot):
 def print_eval(state):
     v = evaluator.evaluate(state)
     print(v)
-
-def terminal_payload(state):
-    returns = state.returns()
-    print(returns)
-    if returns[0] > returns[1]:
-        result = "black_win"
-    elif returns[1] > returns[0]:
-        result = "white_win"
-    else:
-        result = "draw"
-
-    return {
-        "type": "terminal",
-        "result": result,
-        "returns": returns,
-    }
-
 
 def whiteOnMove(state):
     if state.current_player() == 1:
@@ -96,6 +80,8 @@ def maybe_bot_move(state, players):
 def get_server_class(game_name):
     if game_name == "crazyhouse":
         return Crazyhouse()
+    if game_name == "gomoku":
+        return Gomoku()
     raise Exception("Invalid game name")
 
 
@@ -115,7 +101,7 @@ async def ws_endpoint(ws: WebSocket):
         while True:
             handled = False
             data = await ws.receive_json()
-            data['game'] = 'crazyhouse' # for now
+            # data['game'] = 'crazyhouse' # not anymore :-)
             cmd = data.get("cmd")
             print("cmd", cmd)
             if server_class is None:
@@ -135,10 +121,17 @@ async def ws_endpoint(ws: WebSocket):
                     await playBotGame(ws=ws, state=state, players=players)
 
                 # Send initial board
-                await send_state(ws, state, None)
+                #await send_state(ws, state, None)
+                initial_data = server_class.get_state_data(state, None)
+                await ws.send_json(initial_data)
+
+                # await ws.send_json(terminal_payload(state))
+
                 last_move_uci = maybe_bot_move(state, players)
                 if last_move_uci:
-                    await send_state(ws, state, last_move_uci)
+                    bot_move_data =  server_class.get_state_data(state, last_move_uci)
+                    await ws.send_json(initial_data)
+                    # await send_state(ws, state, last_move_uci)
 
 
             # ----------------------------------------

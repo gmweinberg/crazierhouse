@@ -1,4 +1,5 @@
 import pyspiel
+from util import terminal_payload
 
 def get_position_result(position):
     # Send updated board
@@ -98,6 +99,21 @@ class Crazyhouse:
             if chance_node:
                 apply_chess960_nature(state)
         return state
+
+    def get_state_data(self, state, last_move=None):
+        # Send updated board
+        fen = str(state)
+        print("fen", fen)
+        board = fen_to_board(fen)
+        pockets = parse_fen_pockets(fen)
+        result = {"type": "state",
+            "board": board,
+            "pockets": pockets,
+            "last_move": last_move}
+
+        if state.is_terminal():
+            result.extend(terminal_payload(state))
+        return result
 
     def handle_command(self, data):
         cmd = data['cmd']

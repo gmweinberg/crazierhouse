@@ -74,6 +74,7 @@ function openConnection() {
   ws.onopen = () => {
     ws.send(JSON.stringify({
       cmd: "newgame",
+			"game": "crazyhouse",
       //side: gameSide,
       whitePlayer: whitePlayer,
       blackPlayer: blackPlayer,
