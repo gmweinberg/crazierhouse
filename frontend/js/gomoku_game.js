@@ -32,28 +32,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
   //document.getElementById("status").textContent =
   //  "Game page loaded. (No server connection yet)";
-	 openConnection();
+	openConnection();
 });
 
 
 function handleCoordClick(coord) {
-	console.log("coord clicked" + coord);
+	// console.log("coord clicked" + coord);
+	// markCoord(coord);
+	ws.send(JSON.stringify({
+       cmd: "move",
+       coord: coord
+  }));
+
+
 }
 
-function indexToCoord(index, size, dims) {
-  const coord = new Array(dims);
+function makeStrides(size, dims) {
+  const strides = new Array(dims);
+  let s = 1;
   for (let d = dims - 1; d >= 0; d--) {
-    coord[d] = index % size;
-    index = Math.floor(index / size);
+    strides[d] = s;
+    s *= size;
   }
-  return coord;
+  return strides; // strides[d] = size^(dims-1-d)? (actually this yields least-sig at end)
 }
 
 function indexToCoordND(index, size, dims) {
+  const strides = makeStrides(size, dims);
   const coord = new Array(dims);
-  for (let d = dims - 1; d >= 0; d--) {
-    coord[d] = index % size;
-    index = Math.floor(index / size);
+  for (let d = 0; d < dims; d++) {
+    coord[d] = Math.floor(index / strides[d]);
+    index = index % strides[d];
   }
   return coord;
 }
@@ -116,6 +125,13 @@ function renderBoard2D(sliceCoords) {
 
     const cell = document.createElement("div");
     cell.className = "cell";
+		const y = coord[0];
+    const x = coord[1];
+
+    if (x === 0) cell.classList.add("left-edge");
+    if (x === size - 1) cell.classList.add("right-edge");
+    if (y === 0) cell.classList.add("top-edge");
+    if (y === size - 1) cell.classList.add("bottom-edge");
     cell.dataset.coord = JSON.stringify(coord);
 
     cell.addEventListener("click", () => {
@@ -129,23 +145,40 @@ function renderBoard2D(sliceCoords) {
   return wrapper;
 }
 
-function markCell(index) {
-  const board = document.getElementById("board");
-  const cell = board.children[index];
 
-  if (!cell || cell.textContent !== "") {
-    return; // already marked
+function coordsEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
   }
+  return true;
+}
+
+function markCoord(coord) {
+  const cells = document.querySelectorAll(".cell");
+
+  for (const cell of cells) {
+    const cellCoord = JSON.parse(cell.dataset.coord);
+
+    if (coordsEqual(cellCoord, coord)) {
+			//console.log("found cell");
+      renderMark(cell);
+      return;
+    }
+  }
+}
+
+function renderMark(cell, color) {
 
   const style = window.gameConfig.style;
 
   if (style === "tictactoe") {
-    cell.textContent = "X";
+    cell.textContent = color === "b" ? "X" : "O";
     cell.style.fontSize = "24px";
     cell.style.textAlign = "center";
     cell.style.lineHeight = "32px";
   } else {
-    cell.textContent = "⚫";
+    cell.textContent = color === "b" ? "⚫" : "⚪";
     cell.style.fontSize = "24px";
     cell.style.textAlign = "center";
     cell.style.lineHeight = "32px";

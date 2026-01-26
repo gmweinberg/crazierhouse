@@ -53,6 +53,7 @@ class Crazyhouse:
     def __init__(self):
         self.game_name = "crazyhouse"
         self.game = None
+        self.state = None
         self.position = None
 
     def get_game_string(self, data):
@@ -98,9 +99,11 @@ class Crazyhouse:
             state = self.game.new_initial_state()
             if chance_node:
                 apply_chess960_nature(state)
+        self.state = state
         return state
 
-    def get_state_data(self, state, last_move=None):
+    def get_state_data(self, last_move=None):
+        state = self.state
         # Send updated board
         fen = str(state)
         print("fen", fen)
@@ -112,14 +115,42 @@ class Crazyhouse:
             "last_move": last_move}
 
         if state.is_terminal():
-            result.extend(terminal_payload(state))
+            result.update(terminal_payload(state))
         return result
+
+    def apply_player_move(self, data):
+        state = self.state
+        uci = data.get("uci", None)
+        last_move_uci = None
+        if uci is None:
+            print("Client did not send UCI move!")
+            return False, None
+        try:
+            print("uci", uci)
+            action = state.parse_move_to_action(uci)
+        except Exception as e:
+            print("parse_move_to_action failed for", uci, e)
+            return False, None
+        legal = state.legal_actions()
+
+        # Apply human move
+        if action is not None and action in legal:
+            state.apply_action(action)
+            last_move_uci = uci
+            return True, uci
+        else:
+            print("Illegal move:", uci)
+            return False, None
+
+
+
 
     def handle_command(self, data):
         cmd = data['cmd']
 
         if cmd == "reset_position":
             state = self.get_initial_state(data)
+            self.state = state
             fen = str(state)
             self.position = Position(fen)
             result = get_position_result(self.position)

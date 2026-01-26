@@ -28,7 +28,8 @@ function openConnection() {
 
   ws.onopen = () => {
     ws.send(JSON.stringify({
-      cmd: "reset_position"
+      cmd: "reset_position",
+			game: "crazyhouse"
     }));
   };
 
@@ -200,7 +201,7 @@ function launchGame(fen){
     fen: encodedFen
   });
 
-  const url = `game.html?${params.toString()}`;
+  const url = `crazy_game.html?${params.toString()}`;
   const win = window.open(url, "_blank");
   if (win) {
     win.focus();

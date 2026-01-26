@@ -41,7 +41,53 @@ body {
 
 /* Style hooks */
 .gomoku .cell {
-	background: #f2d16b;
+	position: relative;
+	background: #f2d16b; /* wood color */
+}
+
+.gomoku .cell::before,
+.gomoku .cell::after {
+content: "";
+position: absolute;
+background: #333;
+}
+
+.gomoku .cell::before {
+/* horizontal line */
+top: 50%;
+left: 0;
+right: 0;
+height: 2px;
+transform: translateY(-50%);
+}
+
+.gomoku .cell::after {
+/* vertical line */
+left: 50%;
+top: 0;
+bottom: 0;
+width: 2px;
+transform: translateX(-50%);
+}
+
+/* Remove left half of horizontal line on left edge */
+.gomoku .cell.left-edge::before {
+  left: 50%;
+}
+
+/* Remove right half on right edge */
+.gomoku .cell.right-edge::before {
+  right: 50%;
+}
+
+/* Remove top half of vertical line on top edge */
+.gomoku .cell.top-edge::after {
+  top: 50%;
+}
+
+/* Remove bottom half on bottom edge */
+.gomoku .cell.bottom-edge::after {
+  bottom: 50%;
 }
 
 .tictactoe .cell {

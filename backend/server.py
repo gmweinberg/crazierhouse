@@ -118,18 +118,18 @@ async def ws_endpoint(ws: WebSocket):
                 state = server_class.get_initial_state(data)
                 print("state", state)
                 if players.all_bots():
-                    await playBotGame(ws=ws, state=state, players=players)
+                    await playBotGame(ws=ws, state=state, players=players, server_class=server_class)
 
                 # Send initial board
                 #await send_state(ws, state, None)
-                initial_data = server_class.get_state_data(state, None)
+                initial_data = server_class.get_state_data(None)
                 await ws.send_json(initial_data)
 
                 # await ws.send_json(terminal_payload(state))
 
                 last_move_uci = maybe_bot_move(state, players)
                 if last_move_uci:
-                    bot_move_data =  server_class.get_state_data(state, last_move_uci)
+                    bot_move_data =  server_class.get_state_data(last_move_uci)
                     await ws.send_json(initial_data)
                     # await send_state(ws, state, last_move_uci)
 
@@ -141,36 +141,17 @@ async def ws_endpoint(ws: WebSocket):
                 handled = True
                 if state is not None:
                     if players.human_on_move(state):
-                        uci = data.get("uci", None)
-                        last_move_uci = None
-
-                        if uci is None:
-                            print("Client did not send UCI move!")
-                        else:
-                            # Parse human move
-                            try:
-                                print("uci", uci)
-                                action = state.parse_move_to_action(uci)
-                            except Exception as e:
-                                print("parse_move_to_action failed for", uci, e)
-                                action = None
-
-                            legal = state.legal_actions()
-
-                            # Apply human move
-                            if action is not None and action in legal:
-                                state.apply_action(action)
-                                print_eval(state)
-                                last_move_uci = uci
-
-                            else:
-                                print("Illegal move:", uci)
-
+                        applied, last_move =  server_class.apply_player_move(data)
+                    if applied:
+                        print_eval(state)
+                        move_data = server_class.get_state_data(last_move)
+                        await ws.send_json(move_data)
+                        
                         # Send updated board
-                        await send_state(ws, state, last_move_uci)
-                        moved = maybe_bot_move(state, players)
-                        if moved:
-                            await send_state(ws, state, last_move_uci)
+                        last_move = maybe_bot_move(state, players)
+                        if last_move:
+                           move_data = server_class.get_state_data(last_move)
+                           await ws.send_json(move_data)
 
             if not handled:
                 result, handled = server_class.handle_command(data)
@@ -217,17 +198,18 @@ async def send_state(ws, state, last_move):
 
 
 #playBotGame(ws=ws, state=state, blackPlayer=blackPlayer, whitePlayer=whitePlayer)
-async def playBotGame(ws, state, players):
+async def playBotGame(ws, state, players, server_class):
     print('blackPlayer', players.black, 'whitePlayer', players.white)
     while True:
-        last_move_uci = None
+        last_move = None
         if state.is_terminal():
             break
 
         if (whiteOnMove(state) and players.white == 'bot') or (blackOnMove(state) and players.black == 'bot'):
-            last_move_uci = apply_mcts_move(state, mcts_bot)
+            last_move = apply_mcts_move(state, mcts_bot)
         else:
-             last_move_uci = apply_random_move(state)
-        if last_move_uci:
-            await send_state(ws, state, last_move_uci)
+             last_move = apply_random_move(state)
+        if last_move:
+            move_data = server_class.get_state_data(last_move)
+            await ws.send_json(move_data)
             await asyncio.sleep(1)
