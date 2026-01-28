@@ -11,7 +11,7 @@ body {
 }
 
 #status {
-	margin: 1em open sochessurce0;
+	margin: 1em;
 	font-weight: bold;
 }
 
@@ -29,6 +29,7 @@ body {
 }
 
 .cell {
+
 	width: 32px;
 	height: 32px;
 	background: #eee;
@@ -40,9 +41,19 @@ body {
 }
 
 /* Style hooks */
+.gomoku .board {
+  display: grid;
+  gap: 0;              /* IMPORTANT */
+  padding: 16px;       /* outer margin only */
+  background: #f2d16b; /* wood */
+  width: fit-content;
+}
+
 .gomoku .cell {
 	position: relative;
-	background: #f2d16b; /* wood color */
+	background: transparent;
+	border: none;
+  z-index: 2;
 }
 
 .gomoku .cell::before,
@@ -50,6 +61,7 @@ body {
 content: "";
 position: absolute;
 background: #333;
+z-index: 1;
 }
 
 .gomoku .cell::before {
@@ -88,6 +100,13 @@ transform: translateX(-50%);
 /* Remove bottom half on bottom edge */
 .gomoku .cell.bottom-edge::after {
   bottom: 50%;
+}
+
+.gomoku .gomoku-stone {
+  position: relative;
+  z-index: 2; /* ABOVE grid lines */
+  font-size: 24px;
+  line-height: 32px;
 }
 
 .tictactoe .cell {

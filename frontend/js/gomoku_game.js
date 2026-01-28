@@ -14,6 +14,7 @@ function getParams() {
 document.addEventListener("DOMContentLoaded", () => {
   const cfg = getParams();
 	window.gameConfig = cfg;
+	window.gameOver = false;
 
   // Populate info panel
   document.getElementById("white-player").textContent = cfg.white;
@@ -154,15 +155,16 @@ function coordsEqual(a, b) {
   return true;
 }
 
-function markCoord(coord) {
+function markCoord(coord, color) {
   const cells = document.querySelectorAll(".cell");
+	console.log("markCoord " + coord + " " + color);
 
   for (const cell of cells) {
     const cellCoord = JSON.parse(cell.dataset.coord);
 
     if (coordsEqual(cellCoord, coord)) {
 			//console.log("found cell");
-      renderMark(cell);
+      renderMark(cell, color);
       return;
     }
   }
@@ -178,7 +180,10 @@ function renderMark(cell, color) {
     cell.style.textAlign = "center";
     cell.style.lineHeight = "32px";
   } else {
-    cell.textContent = color === "b" ? "⚫" : "⚪";
+		const span = document.createElement("span");
+    span.textContent = color === "b" ? "⚫" : "⚪";
+    span.className = "gomoku-stone";
+    cell.appendChild(span);
     cell.style.fontSize = "24px";
     cell.style.textAlign = "center";
     cell.style.lineHeight = "32px";
@@ -204,19 +209,26 @@ function openConnection() {
 
   ws.onmessage = evt => {
     const msg = JSON.parse(evt.data);
+		// console.log("ws msg", msg);
     if (msg.type === "state") {
-			//console.log("rendering boards")
-      //renderAllBoards(msg.board);
-  }
-  if (msg.type === "terminal") {
-    let text;
-    if (msg.result === "white_win") text = "White wins!";
-    else if (msg.result === "black_win") text = "Black wins!";
-    else text = "Draw.";
+			// player just moved is opposit of playeron move
+			const color = (msg.pom === 'black') ? 'w' : 'b';
+			const coord = msg.last_move;
+      if (msg.last_move !== null && msg.last_move !== undefined) {
+        const coord = msg.last_move;
+				console.log("last move " + coord);
+        markCoord(coord, color);
+      }
+			if (msg.type === "terminal") {
+				let text;
+				if (msg.result === "white_win") text = "White wins!";
+				else if (msg.result === "black_win") text = "Black wins!";
+				else text = "Draw.";
 
-    document.getElementById("status").textContent = text;
-    gameOver = true;
-    console.log("gameOverMan");
-  }
-  };
+				document.getElementById("status").textContent = text;
+				window.gameOver = true;
+				console.log("gameOverMan");
+		  }
+    }
+	}
 }

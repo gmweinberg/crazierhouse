@@ -9,25 +9,26 @@ import torch
 from train_value_policy import PVNet  # or wherever you defined it
 import numpy as np
 import torch.nn.functional as F
-from min_mcts import get_mcts_stuff
+#from min_mcts import get_mcts_stuff
 from crazyhouse import Crazyhouse, fen_to_board, board_to_fen, parse_fen_pockets, pockets_to_fen
 from gomoku import Gomoku
 
 app = FastAPI()
 
-mcts_stuff = get_mcts_stuff()
-mcts_bot = mcts_stuff['mcts_bot']
-evaluator = mcts_stuff['evaluator']
-model = mcts_stuff['model']
+#mcts_stuff = get_mcts_stuff()
+#mcts_bot = mcts_stuff['mcts_bot']
+#evaluator = mcts_stuff['evaluator']
+#model = mcts_stuff['model']
 
 
 def apply_random_move(state):
     legal_actions = state.legal_actions()
     if legal_actions:
         random_action = random.choice(legal_actions)
-        uci = state.action_to_string(random_action)
         state.apply_action(random_action)
-        return uci
+        #uci = state.action_to_string(random_action)
+        #return uci
+        return random_action
 
 def apply_mcts_move(state, mcts_bot):
     #print("MCTS MOVE for player:", state.current_player())
@@ -74,8 +75,8 @@ def maybe_bot_move(state, players):
     if (whiteOnMove(state) and players.white) == "bot" or (blackOnMove(state) and players.black == 'bot'):
         last_move_uci = apply_mcts_move(state, mcts_bot)
     else:
-         last_move_uci = apply_random_move(state)
-    return last_move_uci
+         last_action = apply_random_move(state)
+    return last_action
 
 def get_server_class(game_name):
     if game_name == "crazyhouse":
@@ -121,17 +122,15 @@ async def ws_endpoint(ws: WebSocket):
                     await playBotGame(ws=ws, state=state, players=players, server_class=server_class)
 
                 # Send initial board
-                #await send_state(ws, state, None)
                 initial_data = server_class.get_state_data(None)
                 await ws.send_json(initial_data)
 
                 # await ws.send_json(terminal_payload(state))
 
-                last_move_uci = maybe_bot_move(state, players)
-                if last_move_uci:
-                    bot_move_data =  server_class.get_state_data(last_move_uci)
-                    await ws.send_json(initial_data)
-                    # await send_state(ws, state, last_move_uci)
+                last_action = maybe_bot_move(state, players)
+                if last_action:
+                    bot_move_data =  server_class.get_state_data(last_action)
+                    await ws.send_json(bot_move_data)
 
 
             # ----------------------------------------
@@ -141,16 +140,18 @@ async def ws_endpoint(ws: WebSocket):
                 handled = True
                 if state is not None:
                     if players.human_on_move(state):
-                        applied, last_move =  server_class.apply_player_move(data)
+                        applied, last_action =  server_class.apply_player_move(data)
                     if applied:
-                        print_eval(state)
-                        move_data = server_class.get_state_data(last_move)
+                        # print_eval(state)
+                        move_data = server_class.get_state_data(last_action)
+                        print("sending", move_data)
                         await ws.send_json(move_data)
                         
                         # Send updated board
-                        last_move = maybe_bot_move(state, players)
-                        if last_move:
-                           move_data = server_class.get_state_data(last_move)
+                        last_action = maybe_bot_move(state, players)
+                        if last_action:
+                           move_data = server_class.get_state_data(last_action)
+                           print("sending", move_data)
                            await ws.send_json(move_data)
 
             if not handled:
@@ -179,22 +180,6 @@ class Players:
             return True
         return False
 
-async def send_state(ws, state, last_move):
-    # Send updated board
-    fen = str(state)
-    print("fen", fen)
-    board = fen_to_board(fen)
-    pockets = parse_fen_pockets(fen)
-
-    await ws.send_json({
-        "type": "state",
-        "board": board,
-        "pockets": pockets,
-        "last_move": last_move
-    })
-    if state.is_terminal():
-        print("this is the end")
-        await ws.send_json(terminal_payload(state))
 
 
 #playBotGame(ws=ws, state=state, blackPlayer=blackPlayer, whitePlayer=whitePlayer)
@@ -208,8 +193,8 @@ async def playBotGame(ws, state, players, server_class):
         if (whiteOnMove(state) and players.white == 'bot') or (blackOnMove(state) and players.black == 'bot'):
             last_move = apply_mcts_move(state, mcts_bot)
         else:
-             last_move = apply_random_move(state)
-        if last_move:
-            move_data = server_class.get_state_data(last_move)
+             last_action = apply_random_move(state)
+        if last_action:
+            move_data = server_class.get_state_data(last_action)
             await ws.send_json(move_data)
             await asyncio.sleep(1)

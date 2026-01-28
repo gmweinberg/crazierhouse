@@ -9,7 +9,7 @@ def terminal_payload(state):
         result = "draw"
 
     return {
-        "type": "terminal",
+        "terminal": True,
         "result": result,
         "returns": returns,
     }
