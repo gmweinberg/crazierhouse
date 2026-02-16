@@ -32,10 +32,10 @@ class MCTS:
         game,
         net,
         device,
-        num_simulations: int = 200,
+        num_simulations: int = 800,
         c_puct: float = 1.5,
         dirichlet_alpha: float = 0.3,
-        dirichlet_eps: float = 0.25,
+        dirichlet_eps: float = 0.10,
     ):
         self.game = game
         self.net = net
@@ -63,13 +63,39 @@ class MCTS:
 
         return priors, value
 
+    def value(self, state):
+        obs = np.array(state.observation_tensor(), dtype=np.float32)
+        x = torch.from_numpy(obs).unsqueeze(0).to(self.device)
+
+        with torch.no_grad():
+            logits, value = self.net(x)
+            return value.item()  # from black's perspective
+
     def run(self, root_state):
         root_state = root_state.clone()
         root = {}
+        value_sign = 1.0 if root_state.current_player() == 0 else -1.0
 
         # --- Root expansion ---
         priors, _ = self._expand(root_state)
         legal = root_state.legal_actions()
+        # check for immediate wins and losses
+        immediate_wins = []
+        immediate_losses = []
+        for a in legal:
+            test = root_state.clone()
+            test.apply_action(a)
+            if test.is_terminal():
+                if value_sign * test.returns()[0] > 0:
+                   immediate_wins.append(a)
+                else:
+                   immediate_losses.append(a)
+
+        if immediate_wins:
+            pi = np.zeros(self.num_actions, dtype=np.float64)
+            pi[immediate_wins[0]] = 1.0
+            return pi
+
 
         # Dirichlet noise (root only)
         noise = np.random.dirichlet(
@@ -86,7 +112,6 @@ class MCTS:
             state = root_state.clone()
             node = root
             path = []
-            value_sign = 1.0  # flips every ply
 
             while True:
                 # Selection
@@ -136,9 +161,20 @@ class MCTS:
                 n.value_sum += sign * leaf_value
 
         # --- Build policy ---
-        pi = np.zeros(self.num_actions, dtype=np.float32)
+        pi = np.zeros(self.num_actions, dtype=np.float64)
         for a, n in root.items():
             pi[a] = n.visit_count
 
         pi /= pi.sum()
+        if len(immediate_losses) and (len(immediate_losses) < len(legal)):
+            # mask losing moves
+            for a in immediate_losses:
+               pi[a] = 0
+            pi_sum = pi.sum()
+            if pi_sum > 0:
+                pi /= pi_sum
+            else:
+                pi = np.zeros(self.num_actions, dtype=np.float64)
+                pi [legal[0]] = 1.0
+
         return pi
