@@ -1,28 +1,43 @@
 import pyspiel
+import torch
+import numpy as np
 from util import terminal_payload
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from gomoku9_net import GomokuNet as Gomoku9Net
+from gomoku_mcts import MCTS
+
+class MCTSBot:
+    def __init__(self, game, net):
+        self.game = game
+        self.net = net
+        self.mcts = MCTS(game, net, DEVICE)
+
+    def step(self, state):
+        pi = self.mcts.run(state)
+        return np.argmax(pi)
+
+    def value(self, state):
+        return self.mcts.value(state)
 
 class Gomoku:
     def __init__(self):
         self.game_name = "gomoku"
         self.game = None
+        self.game_params = None
         self.state = None
         self.dims = None
         self.size = None
         self.connect = None
         self.wrap = None
 
-    def get_game_string(self, data):
-        self.size = data.get("size", 15)
-        self.connect = data.get("connect", 5)
-        self.dims = data.get("dims", 2)
-        self.wrap =  data.get("wrap", False)
-        swrap = str(self.wrap).lower()
-        params = f"(size={self.size},dims={self.dims},connect={self.connect},wrap={swrap})"
-        return self.game_name + params
-
     def get_initial_state(self, data):
-        game_string = self.get_game_string(data)
-        self.game = pyspiel.load_game(game_string)
+        params = {}
+        params['size'] = data.get("size", 15)
+        params['connect'] = data.get("connect", 5)
+        params['dims'] = data.get("dims", 2)
+        params['wrap'] =  data.get("wrap", False)
+        self.game_params = params
+        self.game = pyspiel.load_game(self.game_name, params)
         state = self.game.new_initial_state()
         self.state = state
         return state
@@ -54,6 +69,19 @@ class Gomoku:
             return True, action
 
         return False, None
+
+    def get_mcts_bot(self):
+        pt_name = None
+        if self.game_params['size'] == 9:
+            net = Gomoku9Net().to(DEVICE)
+            pt_name = 'gomoku_9.pt'
+            checkpoint = torch.load(pt_name, map_location=DEVICE)
+            net.load_state_dict(checkpoint['model_state_dict'])
+            bot = MCTSBot(self.game, net)
+            return bot
+        raise ValueError("Unsupported mcts bot")
+
+        
 
 
 

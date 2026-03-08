@@ -10,15 +10,16 @@ from train_value_policy import PVNet  # or wherever you defined it
 import numpy as np
 import torch.nn.functional as F
 #from min_mcts import get_mcts_stuff
-from crazyhouse import Crazyhouse, fen_to_board, board_to_fen, parse_fen_pockets, pockets_to_fen
+from crazyhouse import Crazyhouse
 from gomoku import Gomoku
+from shogi import Shogi
 
 app = FastAPI()
 
 #mcts_stuff = get_mcts_stuff()
 #mcts_bot = mcts_stuff['mcts_bot']
-#evaluator = mcts_stuff['evaluator']
 #model = mcts_stuff['model']
+mcts_bot = None
 
 
 def apply_random_move(state):
@@ -39,11 +40,9 @@ def apply_mcts_move(state, mcts_bot):
         print("ILLEGAL ACTION:", ai_action)
         print("LEGAL:", state.legal_actions())
         raise RuntimeError("Illegal MCTS action")
-    ai_uci = state.action_to_string(ai_action)
-    v = evaluator.evaluate(state)
-    print(state.current_player(), v)
-    cp = state.current_player()
-    print("value_for_side_to_move:", v[cp], "raw:", v)
+    if True:
+        v = mcts_bot.value(state)
+        print("value for black:", v)
     state.apply_action(ai_action)
     # diagnostic
     # obs2 = obs.reshape(self.obs_shape)
@@ -53,11 +52,8 @@ def apply_mcts_move(state, mcts_bot):
     #    policy, value = model(x)
 
     #print("RAW value:", value.item())
-    return ai_uci
+    return ai_action
 
-def print_eval(state):
-    v = evaluator.evaluate(state)
-    print(v)
 
 def whiteOnMove(state):
     if state.current_player() == 1:
@@ -73,7 +69,7 @@ def maybe_bot_move(state, players):
     if state.is_terminal():
         return
     if (whiteOnMove(state) and players.white) == "bot" or (blackOnMove(state) and players.black == 'bot'):
-        last_move_uci = apply_mcts_move(state, mcts_bot)
+        last_action = apply_mcts_move(state, mcts_bot)
     else:
          last_action = apply_random_move(state)
     return last_action
@@ -83,6 +79,8 @@ def get_server_class(game_name):
         return Crazyhouse()
     if game_name == "gomoku":
         return Gomoku()
+    if game_name == "shogi":
+        return Shogi()
     raise Exception("Invalid game name")
 
 
@@ -91,6 +89,7 @@ def get_server_class(game_name):
 # ----------------------------------------------------
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    global mcts_bot
     await ws.accept()
 
     game = None
@@ -115,14 +114,17 @@ async def ws_endpoint(ws: WebSocket):
                 handled = True
                 print('data', data)
                 #side = data.get("side", "white")
-                players = Players(data)
                 state = server_class.get_initial_state(data)
                 print("state", state)
+                players = Players(data)
+                if players.any_mcts_bots():
+                    mcts_bot = server_class.get_mcts_bot()
                 if players.all_bots():
                     await playBotGame(ws=ws, state=state, players=players, server_class=server_class)
 
                 # Send initial board
                 initial_data = server_class.get_state_data(None)
+                #print("initial data", initial_data)
                 await ws.send_json(initial_data)
 
                 # await ws.send_json(terminal_payload(state))
@@ -142,7 +144,6 @@ async def ws_endpoint(ws: WebSocket):
                     if players.human_on_move(state):
                         applied, last_action =  server_class.apply_player_move(data)
                     if applied:
-                        # print_eval(state)
                         move_data = server_class.get_state_data(last_action)
                         print("sending", move_data)
                         await ws.send_json(move_data)
@@ -175,6 +176,11 @@ class Players:
             return True
         return False
 
+    def any_mcts_bots(self):
+        if self.white == 'bot' or self.black == 'bot':
+            return True
+        return False
+
     def human_on_move(self, state):
         if (self.white == 'human' and whiteOnMove(state)) or (self.black == 'human' and blackOnMove(state)):
             return True
@@ -186,12 +192,12 @@ class Players:
 async def playBotGame(ws, state, players, server_class):
     print('blackPlayer', players.black, 'whitePlayer', players.white)
     while True:
-        last_move = None
+        last_action = None
         if state.is_terminal():
             break
 
         if (whiteOnMove(state) and players.white == 'bot') or (blackOnMove(state) and players.black == 'bot'):
-            last_move = apply_mcts_move(state, mcts_bot)
+            last_action= apply_mcts_move(state, mcts_bot)
         else:
              last_action = apply_random_move(state)
         if last_action:

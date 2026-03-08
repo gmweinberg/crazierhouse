@@ -1,0 +1,49 @@
+#board {
+  display: grid;
+  grid-template-columns: repeat(9, 60px);
+  grid-template-rows: repeat(9, 60px);
+  border: 2px solid black;
+}
+
+.square {
+  width: 60px;
+  height: 60px;
+  font-size: 32px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.light { background-color: #f6d38a; }
+.dark  { background-color: #e0b86a; }
+
+.piece {
+  display: inline-block;
+  font-weight: bold;
+}
+
+.promoted {
+  color: red;
+}
+
+.white {
+  transform: rotate(180deg);
+}
+
+.stand {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  min-height: 50px;
+}
+
+.stand-piece {
+  font-size: 28px;
+  cursor: pointer;
+}
+
+.stand-count {
+  font-size: 14px;
+}

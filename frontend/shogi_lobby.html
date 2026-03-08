@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Shogi Lobby</title>
+  <script defer src="js/shogi_lobby.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 600px;
+      margin: 2em auto;
+    }
+    fieldset {
+      margin-bottom: 1.5em;
+      padding: 1em;
+    }
+    label {
+      display: block;
+      margin: 0.5em 0;
+    }
+    button {
+      font-size: 1.1em;
+      padding: 0.5em 1em;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Shogi Lobby</h1>
+
+  <fieldset>
+    <legend>Players</legend>
+
+    <label>
+      White:
+      <select id="white-player">
+        <option value="human">Human</option>
+        <option value="bot">Bot</option>
+        <option value="random">Random</option>
+      </select>
+    </label>
+
+    <label>
+      Black:
+      <select id="black-player">
+        <option value="human">Human</option>
+        <option value="bot">Bot</option>
+        <option value="random">Random</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <button id="start-game">Start Game</button>
+
+</body>
+</html>
