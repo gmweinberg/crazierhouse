@@ -12,9 +12,10 @@ const gameStartpos = urlParams.get("startpos") || "standard";
 let ws = null;
 
 let selected = null;
+let selectedHand = null;
+let pendingMove = null;
 
 const boardDiv = document.getElementById("board");
-
 
 const PIECES = {
   P: "歩",
@@ -34,11 +35,32 @@ const PIECES = {
   "+R": "龍"
 };
 
+function onHandClick(pieceType) {
+  selected = null;            // cancel board selection
+  selectedHand = pieceType;
+}
 
 window.addEventListener("load", () => {
   createBoard();
   openConnection();
 });
+
+
+document.getElementById("promoteYes").onclick = () => {
+  ws.send(JSON.stringify({
+    cmd: "move",
+    move: pendingMove + "+"
+  }));
+  hidePromotionDialog();
+};
+
+document.getElementById("promoteNo").onclick = () => {
+  ws.send(JSON.stringify({
+    cmd: "move",
+    move: pendingMove
+  }));
+  hidePromotionDialog();
+};
 
 function decodePiece(cell) {
   if (!cell || cell === "") return null;
@@ -48,11 +70,13 @@ function decodePiece(cell) {
   // Handle "+P" style promoted pieces
   if (cell[0] === "+") {
     promoted = true;
-    cell = cell[1];
   }
 
   const color = (cell === cell.toUpperCase()) ? "black" : "white";
   const type = cell.toUpperCase();
+	if (promoted){
+		console.log("promoted " + type);
+	}
 
   return { type, color, promoted };
 }
@@ -80,47 +104,81 @@ function createBoard() {
   }
 }
 
-function onSquareClick(e) {
+function rankChar(rank) {
+	console.log("rank", rank);
+	const offset = 'a'.charCodeAt(0); // 97
+  return String.fromCharCode(offset + parseInt(rank)); // 0→'a', 1→'b', etc.
+}
 
+function onSquareClick(e) {
   const sq = e.currentTarget;
-  const r = sq.dataset.row;
-  const c = sq.dataset.col;
+  const r = parseInt(sq.dataset.row);
+  const c = parseInt(sq.dataset.col);
+	// console.log("clicked " + r + " " + c);
+  // DROP MOVE
+  if (selectedHand !== null) {
+
+    const move =
+      selectedHand + "*" +
+      (9 - c) +
+      rankChar(r);
+
+    console.log("drop", move);
+
+    ws.send(JSON.stringify({
+      cmd: "move",
+      move: move
+    }));
+
+    selectedHand = null;
+    return;
+  }
+	// TODO handle drop moves
 
   if (selected === null) {
-
     selected = { r, c };
     sq.classList.add("selected");
     return;
-
+  }
+	if (selected.r == r && selected.c == c) {
+    clearSelection();
+    return;
   }
 
-  sendMove(selected.r, selected.c, r, c);
-
+	const move = String(9 - selected.c) + rankChar(selected.r) +  String(9 - c) + rankChar(r);
+  console.log("move", move);
+	  ws.send(JSON.stringify({
+       cmd: "promote",
+       move: move
+  }));
   clearSelection();
 }
 
 function clearSelection() {
-
   selected = null;
-
+	selectedHand = null;
   document
     .querySelectorAll(".selected")
     .forEach(s => s.classList.remove("selected"));
 }
 
-function sendMove(r1, c1, r2, c2) {
+function decodePiece(cell) {
+  if (!cell || cell === "") return null;
 
-  const move = {
-    from: [r1, c1],
-    to: [r2, c2]
-  };
+  let promoted = false;
 
-  console.log("move", move);
+  // Handle "+P" style promoted pieces
+  if (cell[0] === "+") {
+    promoted = true;
+  }
 
-  // eventually call backend here
+  const color = (cell === cell.toUpperCase()) ? "black" : "white";
+  const type = cell.toUpperCase();
+
+  return { type, color, promoted };
 }
 
-function drawPiece(square, piece, color) {
+function drawPiece(square, piece, color, promoted) {
 
   const el = document.createElement("span");
 
@@ -128,6 +186,9 @@ function drawPiece(square, piece, color) {
 
   if (color === "white")
     el.classList.add("white");
+	if (promoted){
+		el.classList.add("promoted");
+	}
 
   el.textContent = PIECES[piece];
 
@@ -142,31 +203,40 @@ function drawBoard(boardState) {
 
   for (let r = 0; r < 9; r++) {
     for (let c = 0; c < 9; c++) {
-
-      const piece = boardState[r][c];
+      const piece = decodePiece(boardState[r][c]);
 
       if (!piece)
         continue;
 
       const sq = squares[r * 9 + c];
 
-      drawPiece(sq, piece.type, piece.color);
+      drawPiece(sq, piece.type, piece.color, piece.promoted);
     }
   }
 }
 
-function drawHand(containerId, pocket) {
+function drawHand(containerId, hand) {
   const container = document.getElementById(containerId);
   container.innerHTML = "";
-  for (const piece in pocket) {
-    const count = pocket[piece];
+  for (const piece in hand) {
+    const count = hand[piece];
     for (let i = 0; i < count; i++) {
       const el = document.createElement("span");
       el.classList.add("piece");
       el.textContent = PIECES[piece];
+			el.onclick = () => onHandClick(piece);
       container.appendChild(el);
     }
   }
+}
+
+function showPromotionDialog() {
+  document.getElementById("promotionDialog").style.display = "block";
+}
+
+
+function hidePromotionDialog() {
+  document.getElementById("promotionDialog").style.display = "none";
 }
 
 function openConnection() {
@@ -185,10 +255,11 @@ function openConnection() {
 
   ws.onmessage = evt => {
     const msg = JSON.parse(evt.data);
+		console.log(msg)
     if (msg.type === "state") {
-			console.log("got state")
+			console.log("got state " + msg.board)
       drawBoard(msg.board);
-      const { white, black } = msg.pockets;
+      const { white, black } = msg.hands;
 			drawHand("white-stand", white);
 			drawHand("black-stand", black);
 		}
@@ -203,7 +274,24 @@ function openConnection() {
 			gameOver = true;
 			console.log("gameOverMan");
 		}
+
+		if (msg.type == 'promote') {
+			if (msg.promote == 'y') {
+						ws.send(JSON.stringify({
+						cmd: "move",
+						"move": msg.move + '+'
+					 }));
+			} else if  (msg.promote == 'n'){
+						ws.send(JSON.stringify({
+						cmd: "move",
+						"move": msg.move
+					 }));
+			} else if (msg.promote == 'm'){
+				pendingMove = msg.move;
+				showPromotionDialog();
+			} else {
+				console.log("illegal move");
+			}
+		}
 	}
 }
-
-

@@ -142,9 +142,6 @@ class Crazyhouse:
             print("Illegal move:", uci)
             return False, None
 
-
-
-
     def handle_command(self, data):
         cmd = data['cmd']
 
