@@ -1,5 +1,30 @@
+import os
 import pyspiel
 from util import terminal_payload
+from az_engine import AlphaZeroEngine
+
+
+class AZBot:
+    def __init__(self, game):
+        self.game = game
+        self.az_engine = AlphaZeroEngine(
+            executable="/home/gweinberg/open_spiel/build/algorithms/alpha_zero_torch/alpha_zero_torch_server",
+            game_string=str(game),
+            model_path=os.path.expanduser(
+                "~/az_runs/crazyhouse960/d4w64ms100"
+            ),
+            checkpoint=1100,
+            simulations=100,
+        )
+        self.step_results = {}
+
+
+    def step(self, state):
+        self.step_results = self.az_engine.evaluate(state)
+        return self.step_results['action']
+
+    def get_evaluation(self):
+        return self.step_results
 
 def get_position_result(position):
     # Send updated board
@@ -141,6 +166,10 @@ class Crazyhouse:
         else:
             print("Illegal move:", uci)
             return False, None
+
+    def get_mcts_bot(self):
+        bot  = AZBot(game=self.game)
+        return bot
 
     def handle_command(self, data):
         cmd = data['cmd']

@@ -78,7 +78,8 @@ window.addEventListener("load", () => {
   const launch = document.getElementById("launch");
 	launch.addEventListener("click", onLaunchClick);
 
-  // draw the pieces buttons
+
+	// draw the pieces buttons
   let row = 0;
   let col = 0;
   addPieceButton("", col, row);
@@ -175,9 +176,23 @@ function onLaunchClick(evt){
 	))
 }
 
+
+
+
 function launchGame(fen){
 	const forced_fen = document.getElementById('force-fen').value.trim();
+	const positionText = document.getElementById('position-number').value.trim();
 	let encodedFen;
+	if (positionText !== '') {
+    const n = Number(positionText);
+
+    if (!Number.isInteger(n) || n < 0 || n >= chess960Fens.length) {
+      alert("Chess960 position number must be between 0 and 959");
+      return;
+    }
+
+    fen = chess960Fens[n];
+  }
 	if (forced_fen) {
 		encodedFen = encodeURIComponent(forced_fen);
 	} else {

@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<script defer src="js/chess960_fens.js"></script>
 <script defer src="js/crazy_lab.js"></script>
 <title>Crazy Lab</title>
 <style>
@@ -107,9 +108,15 @@
 	<label>Force Fen</label>
 	<input size="120" name="force-fen" id="force-fen">
 </div>
+<div>
+  <label for="position-number">Chess960 position number:</label>
+  <input type="number" id="position-number"
+         min="0" max="959" step="1"
+         placeholder="0–959">
+</div>
 
   <button id="launch">Launch Game</button>
-  <button>Reset Position</button>
+  <button id="reset_position">Reset Position</button>
 <div id="control-container">
 	<div id="pieces"></div>
 </div>

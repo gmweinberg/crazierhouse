@@ -81,10 +81,6 @@ class Gomoku:
             return bot
         raise ValueError("Unsupported mcts bot")
 
-        
-
-
-
     def handle_command(self, data):
         cmd = data['cmd']
         return {}, False

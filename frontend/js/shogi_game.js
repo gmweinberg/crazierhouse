@@ -14,6 +14,7 @@ let ws = null;
 let selected = null;
 let selectedHand = null;
 let pendingMove = null;
+let moves = [];
 
 const boardDiv = document.getElementById("board");
 
@@ -38,6 +39,7 @@ const PIECES = {
 function onHandClick(pieceType) {
   selected = null;            // cancel board selection
   selectedHand = pieceType;
+	highlightDropTargets(pieceType);
 }
 
 window.addEventListener("load", () => {
@@ -61,6 +63,48 @@ document.getElementById("promoteNo").onclick = () => {
   }));
   hidePromotionDialog();
 };
+
+function highlightTargets(r, c) {
+
+  const from =
+    String(9 - c) +
+    rankChar(r);
+
+  moves.forEach(m => {
+    if (m.startsWith(from)) {
+
+      const file = m[2];
+      const rank = m[3];
+
+      const targetC = 9 - parseInt(file);
+      const targetR = rank.charCodeAt(0) - 'a'.charCodeAt(0);
+
+      const squares = document.querySelectorAll(".square");
+      const idx = targetR * 9 + targetC;
+
+      squares[idx].classList.add("move-target");
+    }
+  });
+}
+
+function highlightDropTargets(pieceType) {
+
+  moves.forEach(m => {
+    if (m.startsWith(pieceType + "*")) {
+
+      const file = m[2];
+      const rank = m[3];
+
+      const c = 9 - parseInt(file);
+      const r = rank.charCodeAt(0) - 'a'.charCodeAt(0);
+
+      const squares = document.querySelectorAll(".square");
+      const idx = r * 9 + c;
+
+      squares[idx].classList.add("move-target");
+    }
+  });
+}
 
 function decodePiece(cell) {
   if (!cell || cell === "") return null;
@@ -138,6 +182,7 @@ function onSquareClick(e) {
   if (selected === null) {
     selected = { r, c };
     sq.classList.add("selected");
+		highlightTargets(r, c);
     return;
   }
 	if (selected.r == r && selected.c == c) {
@@ -160,6 +205,9 @@ function clearSelection() {
   document
     .querySelectorAll(".selected")
     .forEach(s => s.classList.remove("selected"));
+	document
+  .querySelectorAll(".move-target")
+  .forEach(s => s.classList.remove("move-target"));
 }
 
 function decodePiece(cell) {
@@ -262,6 +310,7 @@ function openConnection() {
       const { white, black } = msg.hands;
 			drawHand("white-stand", white);
 			drawHand("black-stand", black);
+			moves = msg.moves;
 		}
 
 		if (msg.type === "terminal") {

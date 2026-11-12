@@ -69,7 +69,7 @@ function launchGame() {
   const blackPlayer = document.getElementById("black-player").value;
   const startpos = document.getElementById("startpos").value;
   const insanity = document.getElementById("insanity").value;
-  const koth = document.getElementById("koth").value;
+  const koth = document.getElementById("koth").checked ? "true" : "";
 
   // Pass the game settings to game.html via URL query params
   const url =

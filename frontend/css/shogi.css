@@ -30,6 +30,15 @@
   outline: 3px solid red;
 }
 
+.selected {
+  outline: 3px solid red;
+}
+
+
+.move-target {
+  outline: 3px solid green;
+}
+
 .piece {
   display: flex;
   align-items: center;

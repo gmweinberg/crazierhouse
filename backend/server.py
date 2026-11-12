@@ -68,7 +68,7 @@ def maybe_bot_move(state, players):
         return
     if state.is_terminal():
         return
-    if (whiteOnMove(state) and players.white) == "bot" or (blackOnMove(state) and players.black == 'bot'):
+    if (whiteOnMove(state) and players.white == "bot") or (blackOnMove(state) and players.black == 'bot'):
         last_action = apply_mcts_move(state, mcts_bot)
     else:
          last_action = apply_random_move(state)
